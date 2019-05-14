@@ -20,7 +20,7 @@ due to the fact that HDF does not allow access to the file in multiple threads. 
 may be possible to utilise multiprocessing to handle batch crop of files but isn't
 implemented as yet because it is not possible to have nested processes in a QThread.
 
-2. The original version (and the reimagined version [BatchCrop](https://github.com/QBI-Microscopy/BatchCrop)) uses a correction
+2. The [original version](https://github.com/QBI-Microscopy/SlideCrop) (and the reimagined version [BatchCrop](https://github.com/QBI-Microscopy/BatchCrop)) uses a correction
 factor when upscaling the low resolution segmented regions to the resolution
 level being cropped. The reason this happens is that the image data is saved
 to the file in chunks. This means that the image size reported by looking at
