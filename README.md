@@ -35,3 +35,7 @@ This app allows the user to either segment the image based on the automatically
 determined threshold level (determined using the [Otsu method](https://en.wikipedia.org/wiki/Otsu%27s_method))
 or by manually drawing areas on a low resolution version of the slide scanner
 image. Regions produced automatically are editable.
+
+This version does not rely on libtiff (the previous version used a hack in Pylibtiff to write tiled
+images) and uses TiffFile instead. When regions are > 4096 in any dimension the ome-tiff is written
+as a tiled image using numpy memmaps.
