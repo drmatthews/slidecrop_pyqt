@@ -1,0 +1,9 @@
+<svg version="1.1" id="Vrstva_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
+	 width="32px" height="32px" viewBox="0 0 32 32" enable-background="new 0 0 32 32" xml:space="preserve">
+<g>
+	<path fill="#58AB27" d="M0,32C2,25,5,7,8,7s3.219,16.116,6.345,15.52C18.338,21.76,19.852,0,23,0c3.773,0,5,21,9,32"/>
+	<line fill="none" stroke="#E2001A" stroke-width="2" x1="0" y1="17" x2="32" y2="17"/>
+	<path fill="#E2001A" d="M17.168,18C19.297,11.417,20.721,0,23,0c2.443,0,3.818,8.807,5.57,18.001"/>
+	<path fill="#E2001A" d="M3.342,18C4.793,12.143,6.396,7,8,7c1.893,0,2.678,6.414,3.786,10.999"/>
+</g>
+</svg>

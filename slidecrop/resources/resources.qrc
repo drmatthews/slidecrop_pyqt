@@ -1,0 +1,11 @@
+<RCC>
+  <qresource prefix="newPrefix">
+    <file>batch_crop.svg</file>
+    <file>crop.svg</file>
+    <file>Folder-icon.png</file>
+    <file>icon.ico</file>
+    <file>roi.svg</file>
+    <file>threshold.svg</file>
+    <file>Windows_Close_Program_Icon_64.png</file>
+  </qresource>
+</RCC>
