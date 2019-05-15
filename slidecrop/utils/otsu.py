@@ -14,10 +14,8 @@ def threshold_otsu(slide_hist, nbins=256, bin_width=1.0, show_plot=False):
     # of pixels with close to the maximum grey level value
     # on the camera
     hist = slide_hist[np.nonzero(slide_hist)]
-    hist = hist[:-3]
     bin_centers = np.arange(nbins) + bin_width / .5
     bin_centers = bin_centers[np.nonzero(slide_hist)]
-    bin_centers = bin_centers[:-3]
 
     # class probabilities for all possible thresholds
     weight1 = np.cumsum(hist)
