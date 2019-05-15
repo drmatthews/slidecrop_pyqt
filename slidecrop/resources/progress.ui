@@ -11,14 +11,14 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Cropping</string>
+   <string>Progess</string>
   </property>
   <property name="windowIcon">
    <iconset resource="resources.qrc">
     <normaloff>:/newPrefix/icon.ico</normaloff>:/newPrefix/icon.ico</iconset>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <widget class="QProgressBar" name="crop_progress">
+   <widget class="QProgressBar" name="progress">
     <property name="geometry">
      <rect>
       <x>30</x>

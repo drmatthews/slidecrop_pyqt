@@ -4,12 +4,14 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
 from scipy.ndimage import binary_fill_holes, binary_erosion
-from skimage import data
-from skimage.filters import threshold_otsu
 from skimage.segmentation import clear_border
 from skimage.measure import label, regionprops
-from skimage.morphology import closing, binary_closing, binary_opening, square
+from skimage.morphology import (
+    closing, binary_closing, binary_opening, square
+)
 from skimage.color import label2rgb
+
+from slidecrop.utils.otsu import threshold_otsu
 
 
 class ImageRegion:
@@ -47,30 +49,21 @@ class SegmentSlide:
             # set to 0 for now
             self.channel = 0
 
-    def _preprocess(self, image):
-        c = self.channel
-        plane = image[c, :, :]
+    def _apply_threshold(self, plane, thresh):
         if 'bright' in self.mode:
-            return np.subtract(255, plane)
+            return plane < thresh
         elif 'fluoro' in self.mode:
-            return plane
-        else:
-            raise NotImplementedError(
-                (
-                'should be a bright-field ("bright")'
-                'or fluoroescence image ("fluoro")'
-                )
-            )
+            return plane > thresh
 
     def _auto_threshold(self, plane, method='otsu'):
         if 'otsu' in method:
             thresh = threshold_otsu(plane)
-            return plane > thresh
+            return self._apply_threshold(plane, thresh)
         else:
             raise NotImplementedError('method should be otsu')
 
     def _manual_threshold(self, plane, thresh):
-        return plane > thresh
+        return self._apply_threshold(plane, thresh)
 
     def _close_binary(self, binary, kernel=3):
         return binary_closing(binary, square(kernel))
@@ -126,7 +119,7 @@ class SegmentSlide:
 
     def run(self, image):
 
-        plane = self._preprocess(image)
+        plane = image[self.channel, :, :]
         if 'manual' in self.threshold_method:
             bw = self._manual_threshold(plane, self.threshold)
         else:

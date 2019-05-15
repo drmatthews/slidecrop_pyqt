@@ -8,8 +8,8 @@ from PyQt5.QtCore import QThread, QRunnable, QObject
 from PyQt5.QtCore import pyqtSignal, pyqtSlot
 
 import numpy as np
-from skimage.filters import threshold_otsu
 
+from slidecrop.utils.otsu import threshold_otsu
 from slidecrop.ims.slide import SlideImage
 from slidecrop.processing.segmentation import SegmentSlide
 from slidecrop.ome.ome_tiff_generator import OMETiffGenerator
@@ -150,6 +150,7 @@ class BatchSlideParseWorker(BaseWorker):
     Thread for batch parsing (reading) a *.ims file
     to get thresholds and channels
     """
+    progress = pyqtSignal(int)
     parse_done = pyqtSignal([object], [str])
 
     def __init__(self, folder=None):
@@ -165,38 +166,12 @@ class BatchSlideParseWorker(BaseWorker):
     def initialise(self, folder):
         self.folder = folder
 
-    def _preprocess(self, mode, plane):
-        """
-        Private method which will invert the pixel
-        intensity values (0-255 range) if the
-        image is brightfield.
-
-        :param mode: the microscope modality - 'bright' or 'flouro'
-        :type mode: str
-        :param plane: image pixels
-        :type plane: numpy array
-        """
-        if 'bright' in mode:
-            return np.subtract(255, plane)
-        elif 'fluoro' in mode:
-            return plane
-        else:
-            raise NotImplementedError(
-                (
-                'should be a bright-field ("bright")'
-                'or fluoroescence image ("fluoro")'
-                )
-            )
-
     def _getThreshold(self, slide):
-        mode = slide.microscope_mode
-        lo = slide.low_resolution_image()
         size_c = slide.size_c
-
         thresh = []
         for c in range(size_c):
-            plane = self._preprocess(mode, lo[c, :, :])
-            thresh.append(threshold_otsu(plane))        
+            hist = slide.get_histogram(c=c)
+            thresh.append(threshold_otsu(hist))        
 
         return thresh
 
@@ -209,6 +184,7 @@ class BatchSlideParseWorker(BaseWorker):
         try:
             channels = []
             thresholds = []
+            count = 0
             for filename in os.listdir(self.folder):
                 if filename.endswith('.ims'):
                     slide_path = os.path.join(self.folder, filename)
@@ -216,7 +192,10 @@ class BatchSlideParseWorker(BaseWorker):
                     channels.append(slide.size_c)
                     thresholds.append(self._getThreshold(slide))
                     slide.close()
-
+                    self.progress.emit(count)
+                    time.sleep(0.2)
+                    count += 1
+            print(count)
             self.parse_done.emit((channels, thresholds))
         except:
             self.parse_done[str].emit("")
@@ -282,29 +261,6 @@ class ThresholdWorker(BaseWorker):
         super().__init__()
         self.slide_path = slide_path
 
-    def _preprocess(self, mode, plane):
-        """
-        Private method which will invert the pixel
-        intensity values (0-255 range) if the
-        image is brightfield.
-
-        :param mode: the microscope modality - 'bright' or 'flouro'
-        :type mode: str
-        :param plane: image pixels
-        :type plane: numpy array
-        """
-        if 'bright' in mode:
-            return np.subtract(255, plane)
-        elif 'fluoro' in mode:
-            return plane
-        else:
-            raise NotImplementedError(
-                (
-                'should be a bright-field ("bright")'
-                'or fluoroescence image ("fluoro")'
-                )
-            )
-
     def run(self):
         """
         Called when the start() method is called on the instance
@@ -313,14 +269,11 @@ class ThresholdWorker(BaseWorker):
         """
         try:
             with SlideImage(self.slide_path) as slide:
-                mode = slide.microscope_mode
-                lo = slide.low_resolution_image()
                 size_c = slide.size_c
-
-            thresh = []
-            for c in range(size_c):
-                plane = self._preprocess(mode, lo[c, :, :])
-                thresh.append(threshold_otsu(plane))
+                thresh = []
+                for c in range(size_c):
+                    hist = slide.get_histogram(c=c)
+                    thresh.append(threshold_otsu(hist))
 
             self.threshold_finished.emit(thresh)
         except:
@@ -353,7 +306,7 @@ class HistogramWorker(BaseWorker):
         with SlideImage(self.slide_path) as slide:
             y = []
             for c in range(slide.size_c):
-                y.append(slide.get_histogram(c))
+                y.append(slide.get_histogram(c=c))
 
         self.histogram_finished.emit(y)
 

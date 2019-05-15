@@ -9,7 +9,7 @@ from slidecrop.gui.dialogs import (
     SegmentationDialog,
     BatchDialog
 )
-from slidecrop.gui.progress import CropProgress
+from slidecrop.gui.progress import Progress
 from slidecrop.ims.slide import SlideImage
 from slidecrop.gui.threads import (
     SlideImportWorker,
@@ -37,6 +37,7 @@ class SlideViewer(QtWidgets.QGraphicsView):
         self.viewport_geometry = (0, 20, 427, 561)
         self.setGeometry(*self.viewport_geometry)
         self._zoom = 0
+        self.factor = None
         self._empty = True
         self._scene = QtWidgets.QGraphicsScene()
         self._slide = QtWidgets.QGraphicsPixmapItem()
@@ -59,7 +60,7 @@ class SlideViewer(QtWidgets.QGraphicsView):
         self.setSizePolicy(sizePolicy)
         self.setMinimumSize(QtCore.QSize(431, 541))        
 
-    def clear_scene(self):
+    def clearScene(self):
         """
         Remove all ROIItems from the scene
         """
@@ -75,24 +76,22 @@ class SlideViewer(QtWidgets.QGraphicsView):
     def hasSlide(self):
         return not self._empty
 
-    def fitInView(self, scale=True, factor=None):
+    def fitInView(self, scale=True):
         rect = QtCore.QRectF(self._slide.pixmap().rect())
         if not rect.isNull():
             self.setSceneRect(rect)
-            if self.hasSlide():
+            if self.hasSlide() and self._zoom == 0:
                 unity = self.transform().mapRect(QtCore.QRectF(0, 0, 1, 1))
                 self.scale(1 / unity.width(), 1 / unity.height())
                 viewrect = self.viewport().rect()
                 scenerect = self.transform().mapRect(rect)
-                if factor is None:
-                    factor = min(viewrect.width() / scenerect.width(),
-                                 viewrect.height() / scenerect.height())
+                factor = min(viewrect.width() / scenerect.width(),
+                             viewrect.height() / scenerect.height())
                 self.scale(factor, factor)
-            self._zoom = 0
+            # self._zoom = 0
 
     def setSlide(self, qimg=None):
         pixmap = QtGui.QPixmap.fromImage(qimg)
-        self._zoom = 0
         if not pixmap.isNull():
             self._empty = False
             self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
@@ -101,12 +100,12 @@ class SlideViewer(QtWidgets.QGraphicsView):
             self._empty = True
             self.setDragMode(QtWidgets.QGraphicsView.NoDrag)
             self._slide.setPixmap(QtGui.QPixmap())
-        self.fitInView(factor=0.468)
-        # self.fitInView()
+        self.fitInView()
 
     def wheelEvent(self, event):
+    
         if self.hasSlide():
-            if event.angleDelta().y() > 0:
+            if event.angleDelta().y() > 0:              
                 factor = 1.25
                 self._zoom += 1
             else:
@@ -118,12 +117,6 @@ class SlideViewer(QtWidgets.QGraphicsView):
                 self.fitInView()
             else:
                 self._zoom = 0
-
-    def toggleDragMode(self):
-        if self.dragMode() == QtWidgets.QGraphicsView.ScrollHandDrag:
-            self.setDragMode(QtWidgets.QGraphicsView.NoDrag)
-        elif not self._slide.pixmap().isNull():
-            self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
 
     def keyPressEvent(self, event):
         """
@@ -147,6 +140,44 @@ class SlideViewer(QtWidgets.QGraphicsView):
 
             # redraw the roi_table with the remaining items
             self.parent.roi_table.update(roi_list)
+
+    def dragEnterEvent(self, event):
+        """
+        Overrides built-in dragEnterEvent.
+        """
+        if event.mimeData().hasUrls():
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        """
+        Overrides built-in dragMoveEvent.
+        """
+        if event.mimeData().hasUrls():
+            event.accept()
+        else:
+            event.ignore()
+ 
+    def dropEvent(self, event):
+        """
+        Overrides built-in dropEvent.
+        """
+        url = event.mimeData().urls()[0]
+        path = url.toLocalFile()
+        if os.path.isfile(path):
+            self.parent._importImage(path)
+        elif os.path.isdir(path):
+            self.parent.batch_dialog = BatchDialog(self, path)
+
+            if not self.parent.batch_dialog.isVisible():          
+                self.parent.batch_dialog.show()
+
+    def toggleDragMode(self):
+        if self.dragMode() == QtWidgets.QGraphicsView.ScrollHandDrag:
+            self.setDragMode(QtWidgets.QGraphicsView.NoDrag)
+        elif not self._slide.pixmap().isNull():
+            self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
 
     def addROI(self, roi):
         """
@@ -193,10 +224,8 @@ class Window(QtWidgets.QMainWindow):
 
         # widgets
         self.viewer = SlideViewer(self, self.ui.slide_tabWidget)
-        self.viewer.hide()
-        self.ui.slide_tabWidget.hide()
+        self.ui.slide_tabWidget.setTabText(0, 'All')
         self.roi_table = ROITable(self, self.ui.roi_list)
-        self.roi_table.hide()
 
         # signals
         self.ui.actionOpen.triggered.connect(self.openClicked)
@@ -315,6 +344,8 @@ class Window(QtWidgets.QMainWindow):
         """
         if self.curr_img is not None:
 
+            self.viewer.clearScene()
+
             # determine the channel to segment
             segment_channel = self.curr_channel
             if isinstance(segment_channel, str):
@@ -351,7 +382,7 @@ class Window(QtWidgets.QMainWindow):
 
             if num_regions > 0:
                 # set up the progress bar
-                self.crop_dialog = CropProgress(self, num_regions)
+                self.progress_dialog = Progress(self, num_regions - 1, 'Crop')
                 # explitily set outputdir and channels while testing
                 outputdir = os.path.dirname(self.slide_path)
                 channels = [c for c in range(self.channels)]
@@ -365,8 +396,8 @@ class Window(QtWidgets.QMainWindow):
 
                 # respond to the finished signal
                 self.ome_worker.finished.connect(self.onCropFinished)
-                if not self.crop_dialog.isVisible():          
-                    self.crop_dialog.show()
+                if not self.progress_dialog.isVisible():          
+                    self.progress_dialog.show()
 
 
     def batchClicked(self):
@@ -386,6 +417,9 @@ class Window(QtWidgets.QMainWindow):
         self.basename = os.path.splitext(self.slide_path)[0]
         self.slide = slide
 
+        # get the microscope mode
+        self.microscope_mode = self.slide.microscope_mode
+
         # get the channels in the slide
         self.channels = self.slide.channels()
 
@@ -400,6 +434,9 @@ class Window(QtWidgets.QMainWindow):
         # get channel names and colors
         self.channel_names = slide.channel_names
         self.channel_colors = slide.channel_colors
+
+        # initialise the roi table
+        self.roi_table.initTable()
 
         # update the image display tabs
         self.ui.slide_tabWidget.clear()
@@ -453,6 +490,7 @@ class Window(QtWidgets.QMainWindow):
             self._updateDisplayImage(self.curr_channel, show_mask=show_mask)
 
     def onThresholdFinished(self, result):
+        print('result {}'.format(result))
         if result:
             self.threshold = result
 
@@ -477,16 +515,17 @@ class Window(QtWidgets.QMainWindow):
             self.slide_histogram = result
 
     def updateProgress(self, value):
-        if self.crop_dialog.isVisible():
-            self.crop_dialog.updateBar(value)
+        if self.progress_dialog.isVisible():
+            self.progress_dialog.updateBar(value)
 
     def onCropFinished(self):
-        if self.crop_dialog.isVisible():
-            self.crop_dialog.close()
+        if self.progress_dialog.isVisible():
+            self.progress_dialog.close()
 
     # helpers
     def _importImage(self, filepath):
         if filepath:
+            self.viewer.clearScene()
             self.import_worker.slide_path = filepath
             self.import_worker.start()
 
@@ -512,11 +551,10 @@ class Window(QtWidgets.QMainWindow):
             img_RGB[:, :, 3] = 255
             if self.threshold and show_mask:
                 threshold = self.threshold[channel]
-                print("channel threshold {}".format(threshold))
-                # test image is brightfield so invert
-                inverted = np.subtract(255, img_RGB[:, :, channel])
-                mask = inverted > threshold
-                # mask = img_RGB[:, :, channel] > threshold[0]
+                if 'bright' in self.microscope_mode:
+                    mask = img_RGB[:, :, channel] < threshold
+                elif 'fluoro' in self.microscope_mode:
+                    mask = img_RGB[:, :, channel] > threshold
                 img_RGB[mask, 0] = 255
                 img_RGB[mask, 1] = 255
         else:
@@ -527,9 +565,10 @@ class Window(QtWidgets.QMainWindow):
             if self.threshold and show_mask:
                 threshold = self.threshold[0]
                 print("rgb threshold {}".format(threshold))
-                # only invert display image if it brightfield
-                inverted = np.subtract(255, img_RGB[:, :, 0])
-                mask = inverted > threshold
+                if 'bright' in self.microscope_mode:
+                    mask = img_RGB[:, :, 0] < threshold
+                elif 'fluoro' in self.microscope_mode:
+                    mask = img_RGB[:, :, 0] > threshold
                 img_RGB[mask, 0] = 255
 
         qimg = QtGui.QImage(img_RGB.data, w, h, QtGui.QImage.Format_RGBA8888)

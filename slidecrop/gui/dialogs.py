@@ -7,8 +7,8 @@ from numpy import arange, max, nonzero
 
 import slidecrop.gui.threshold_ui as thresh_UI
 import slidecrop.gui.segmentation_ui as seg_UI
-import slidecrop.gui.crop_ui as crop_UI
 import slidecrop.gui.batch_ui as batch_UI
+from slidecrop.gui.progress import Progress
 from slidecrop.gui.threads import ThresholdWorker
 from slidecrop.gui.threads import SegmentationWorker
 from slidecrop.gui.threads import BatchSegmentationWorker
@@ -58,8 +58,8 @@ class HistogramGraph(pg.GraphicsLayoutWidget):
 
         xdata = arange(256)
         ydata = self.data
-        ydata = ydata[nonzero(ydata)]
-        xdata = xdata[nonzero(ydata)]
+        # ydata = ydata[nonzero(ydata)]
+        # xdata = xdata[nonzero(ydata)]
         ymax = max(ydata)
         self.thresh_line = ThresholdLine(self.threshold)
 
@@ -121,15 +121,6 @@ class SegmentationDialog(QtWidgets.QMainWindow):
             self.parent.roi_table.get_checked_rows()
 
 
-class CropDialog(QtWidgets.QMainWindow):
-    def __init__(self, parent, num_regions):
-        super(CropDialog, self).__init__(parent)
-        self.parent = parent
-        self.ui = crop_UI.Ui_MainWindow()
-        self.ui.setupUi(self)
-        self.ui.crop_progress.setMaximum(num_regions - 1)
-
-
 class BatchTable(QtWidgets.QWidget):
 
     def __init__(self, parent=None, table_widget=None):
@@ -140,8 +131,6 @@ class BatchTable(QtWidgets.QWidget):
         self.table_widget.setSelectionBehavior(QtWidgets.QTableView.SelectRows)
 
     def update(self, folder, channels, thresholds):
-        print(channels)
-        print(thresholds)
         self.table_widget.clear()
         if folder:
             file_count = 0
@@ -218,7 +207,7 @@ class BatchDialog(QtWidgets.QMainWindow):
 
         if folder:
             self.ui.folder_edit.setText(folder)
-            self.parseSlides(folder)
+            self._parseSlides(folder)
 
     def init_ui(self):
         self.ui = batch_UI.Ui_MainWindow()
@@ -235,8 +224,8 @@ class BatchDialog(QtWidgets.QMainWindow):
         self.import_worker.parse_done[str].connect(self._parseCancelled)
 
         self.worker = BatchCropWorker()
-        self.worker.segmentation_finished.connect(self.setBarMax)
-        self.worker.batch_progress.connect(self.updateProgress)
+        self.worker.segmentation_finished.connect(self.setTableBarMax)
+        self.worker.batch_progress.connect(self.updateTableProgressBars)
         self.worker.finished.connect(self.batchFinished)
 
     def folderClicked(self):
@@ -244,8 +233,7 @@ class BatchDialog(QtWidgets.QMainWindow):
         if folder:
             self.folder = folder
             self.ui.folder_edit.setText(folder)
-            self.import_worker.initialise(folder)
-            self.import_worker.start()
+            self._parseSlides(folder)
 
     def runClicked(self):
         # get the rows from the table
@@ -284,18 +272,17 @@ class BatchDialog(QtWidgets.QMainWindow):
                 for bar in self.batch_table.bars:
                     bar.setValue(0)
 
-    def parseSlides(self, folder):
-        if os.path.isdir(folder):
-            self.import_worker.initialise(folder)
-            self.import_worker.start()
-
-    def setBarMax(self, val):
+    def setTableBarMax(self, val):
         bar = self.batch_table.bars[val[0]]
         bar.setMaximum(val[1] - 1)
 
-    def updateProgress(self, val):
+    def updateTableProgressBars(self, val):
         bar = self.batch_table.bars[val[0]]
         bar.setValue(val[1])
+
+    def updateImportProgress(self, val):
+        if self.import_progress.isVisible():
+            self.import_progress.updateBar(val)        
 
     def batchFinished(self):
         self.ui.run_btn.setEnabled(True)
@@ -303,16 +290,34 @@ class BatchDialog(QtWidgets.QMainWindow):
         for bar in self.batch_table.bars:
             bar.setValue(0)
 
+    def importFinished(self):
+        if self.import_progress.isVisible():
+            self.import_progress.close()            
+
+    def _parseSlides(self, folder):
+        if os.path.isdir(folder):
+            count = 0
+            for filename in os.listdir(folder):
+                if filename.endswith('.ims'):
+                    count += 1
+            print(count)
+            self.import_progress = Progress(self, count - 1, 'Slide import')
+            self.import_worker.initialise(folder)
+            self.import_worker.progress.connect(self.updateImportProgress)
+            self.import_worker.finished.connect(self.importFinished)
+            self.import_worker.start()
+
+            if not self.import_progress.isVisible():          
+                self.import_progress.show()
+
     def _parseCancelled(self):
         print("import didn't work")
         self.channels = ''
         self.thresholds = ''
 
     def _updateParameters(self, results):
-        print("results {}".format(results))
         if results:
             channels = [str(c) for c in results[0]]
-            print("channels {}".format(channels))
             thresholds = []
             for thresh in results[1]:
                 thresholds.append(', '.join('{:.2f}'.format(t) for t in thresh))

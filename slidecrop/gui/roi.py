@@ -19,6 +19,15 @@ class ROITable(QtWidgets.QWidget):
         self.table_widget.clicked.connect(self.item_selected)
         self._rows = []
 
+    def initTable(self):
+        self.table_widget.clear()
+        self.table_widget.setRowCount(0)
+        self.table_widget.setColumnCount(5)
+        self.table_widget.setHorizontalHeaderLabels(["", "x", "y", "w", "h"])
+        header = self.table_widget.horizontalHeader()
+        for c in range(0, 5):
+            header.setSectionResizeMode(c, QtWidgets.QHeaderView.ResizeToContents)        
+
     def update(self, roi_list):
         """
         Update (redraw) the table widget
@@ -26,8 +35,7 @@ class ROITable(QtWidgets.QWidget):
         if roi_list:
             self.table_widget.clear()
             self.table_widget.setRowCount(len(roi_list))
-            self.table_widget.setColumnCount(5)
-            self.table_widget.setHorizontalHeaderLabels(["", "x", "y", "w", "h"]) 
+            self.table_widget.setHorizontalHeaderLabels(["", "x", "y", "w", "h"])
             header = self.table_widget.horizontalHeader()
             for c in range(0, 5):
                 header.setSectionResizeMode(c, QtWidgets.QHeaderView.ResizeToContents)

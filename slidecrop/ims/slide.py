@@ -90,7 +90,8 @@ class SlideImage:
                 '/DataSet/ResolutionLevel {0}/TimePoint {1}/Channel {2}/'.
                 format(r, t, c)
             )
-            return self.slide[histpath]['Histogram'][:]
+            hist = self.slide[histpath]['Histogram'][:]
+            return hist
 
     def resolution_levels(self):
         """

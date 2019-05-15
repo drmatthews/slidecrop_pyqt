@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'slidecrop\resources\crop.ui'
+# Form implementation generated from reading ui file 'slidecrop\resources\progress.ui'
 #
 # Created by: PyQt5 UI code generator 5.12.1
 #
@@ -18,10 +18,10 @@ class Ui_MainWindow(object):
         MainWindow.setWindowIcon(icon)
         self.centralwidget = QtWidgets.QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
-        self.crop_progress = QtWidgets.QProgressBar(self.centralwidget)
-        self.crop_progress.setGeometry(QtCore.QRect(30, 20, 321, 21))
-        self.crop_progress.setProperty("value", 0)
-        self.crop_progress.setObjectName("crop_progress")
+        self.progress = QtWidgets.QProgressBar(self.centralwidget)
+        self.progress.setGeometry(QtCore.QRect(30, 20, 321, 21))
+        self.progress.setProperty("value", 0)
+        self.progress.setObjectName("progress")
         MainWindow.setCentralWidget(self.centralwidget)
 
         self.retranslateUi(MainWindow)
@@ -29,7 +29,7 @@ class Ui_MainWindow(object):
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "Cropping"))
+        MainWindow.setWindowTitle(_translate("MainWindow", "Progess"))
 
 
 import slidecrop.resources.resources_rc
