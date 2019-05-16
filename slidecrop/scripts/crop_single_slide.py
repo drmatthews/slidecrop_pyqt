@@ -11,8 +11,7 @@ def crop_slide(*args, **kwargs):
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--filename', help='name of file to be cropped', default='rgb1.ims')
-    parser.add_argument('--inputdir', help='directory in which the slide file resides', default='.\\test_data\\')
+    parser.add_argument('--filepath', help='full path to slide to be cropped')
     parser.add_argument('--outputdir', help='optionally specify an output directory')
     parser.add_argument('--crop_level', help='resolution level to be cropped - default is best resolution')
     parser.add_argument('--seg_level', help='resolution level to be segmented - default is lowest resolution')    
@@ -32,10 +31,11 @@ if __name__=='__main__':
 
     args = parser.parse_args()
     parameters = {}
-    outputdir = args.inputdir
+    filepath = args.filepath
+    inputdir = os.path.dirname(filepath)
+    outputdir = inputdir
     if args.outputdir:
         outputdir = args.outputdir
-    filepath = os.path.join(args.inputdir, args.filename)
 
     crop_level = None
     if args.crop_level:
