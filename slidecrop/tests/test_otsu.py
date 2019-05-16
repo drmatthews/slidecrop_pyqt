@@ -1,7 +1,7 @@
 import numpy as np
 
 from slidecrop.ims.slide import SlideImage
-from slidecrop.utils.otsu import threshold_otsu
+from slidecrop.processing.otsu import threshold_otsu
 
 edges = np.arange(256)
 with SlideImage('.\\slidecrop\\test_data\\rgb1.ims') as slide:

@@ -10,8 +10,14 @@ from skimage.morphology import (
     closing, binary_closing, binary_opening, square
 )
 from skimage.color import label2rgb
-
-from slidecrop.utils.otsu import threshold_otsu
+from skimage.filters import (
+    threshold_isodata,
+    threshold_mean,
+    threshold_otsu,
+    threshold_triangle,
+    threshold_yen
+)
+# from slidecrop.processing.otsu import threshold_otsu
 
 
 class ImageRegion:
@@ -56,11 +62,19 @@ class SegmentSlide:
             return plane > thresh
 
     def _auto_threshold(self, plane, method='otsu'):
-        if 'otsu' in method:
+        if 'isodata' in method:
+            thresh = threshold_isodata(plane)        
+        elif 'mean' in method:
+            thresh = threshold_mean(plane)
+        elif 'otsu' in method:
             thresh = threshold_otsu(plane)
-            return self._apply_threshold(plane, thresh)
+        elif 'triangle' in method:
+            thresh = threshold_triangle(plane)
+        elif 'yen' in method:
+            thresh = threshold_yen(plane)
         else:
-            raise NotImplementedError('method should be otsu')
+            raise NotImplementedError('thresholding method not supported')
+        return self._apply_threshold(plane, thresh)
 
     def _manual_threshold(self, plane, thresh):
         return self._apply_threshold(plane, thresh)

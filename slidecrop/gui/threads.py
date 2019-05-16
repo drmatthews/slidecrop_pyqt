@@ -8,8 +8,15 @@ from PyQt5.QtCore import QThread, QRunnable, QObject
 from PyQt5.QtCore import pyqtSignal, pyqtSlot
 
 import numpy as np
+from skimage.filters import (
+    threshold_isodata,
+    threshold_mean,
+    threshold_otsu,
+    threshold_triangle,
+    threshold_yen
+)
 
-from slidecrop.utils.otsu import threshold_otsu
+# from slidecrop.processing.otsu import threshold_otsu
 from slidecrop.ims.slide import SlideImage
 from slidecrop.processing.segmentation import SegmentSlide
 from slidecrop.ome.ome_tiff_generator import OMETiffGenerator
@@ -153,7 +160,7 @@ class BatchSlideParseWorker(BaseWorker):
     progress = pyqtSignal(int)
     parse_done = pyqtSignal([object], [str])
 
-    def __init__(self, folder=None):
+    def __init__(self, folder=None, method='otsu'):
         """
         Constructor
 
@@ -162,16 +169,34 @@ class BatchSlideParseWorker(BaseWorker):
         """
         super().__init__()
         self.folder = folder
+        self.method = method
 
-    def initialise(self, folder):
+    def initialise(self, folder, method):
         self.folder = folder
+        self.method = method
+
+    def _auto_threshold(self, plane, method='otsu'):
+        if 'isodata' in method:
+            thresh = threshold_isodata(plane)        
+        elif 'mean' in method:
+            thresh = threshold_mean(plane)
+        elif 'otsu' in method:
+            thresh = threshold_otsu(plane)
+        elif 'triangle' in method:
+            thresh = threshold_triangle(plane)
+        elif 'yen' in method:
+            thresh = threshold_yen(plane)
+        else:
+            raise NotImplementedError('thresholding method not supported')
+        return thresh        
 
     def _getThreshold(self, slide):
+        low = slide.low_resolution_image()
         size_c = slide.size_c
         thresh = []
         for c in range(size_c):
-            hist = slide.get_histogram(c=c)
-            thresh.append(threshold_otsu(hist))        
+            plane = low[c, :, :]                    
+            thresh.append(self._auto_threshold(plane, self.method))       
 
         return thresh
 
@@ -181,24 +206,24 @@ class BatchSlideParseWorker(BaseWorker):
 
         Emits tuple of channels (int) and thresholds (list)
         """
-        try:
-            channels = []
-            thresholds = []
-            count = 0
-            for filename in os.listdir(self.folder):
-                if filename.endswith('.ims'):
-                    slide_path = os.path.join(self.folder, filename)
-                    slide = SlideImage(slide_path)
-                    channels.append(slide.size_c)
-                    thresholds.append(self._getThreshold(slide))
-                    slide.close()
-                    self.progress.emit(count)
-                    time.sleep(0.2)
-                    count += 1
-            print(count)
-            self.parse_done.emit((channels, thresholds))
-        except:
-            self.parse_done[str].emit("")
+        # try:
+        channels = []
+        thresholds = []
+        count = 0
+        for filename in os.listdir(self.folder):
+            if filename.endswith('.ims'):
+                slide_path = os.path.join(self.folder, filename)
+                slide = SlideImage(slide_path)
+                channels.append(slide.size_c)
+                thresholds.append(self._getThreshold(slide))
+                slide.close()
+                self.progress.emit(count)
+                time.sleep(0.2)
+                count += 1
+        print(count)
+        self.parse_done.emit((channels, thresholds))
+        # except:
+        #     self.parse_done[str].emit("")
 
 
 class SegmentationWorker(BaseWorker):
@@ -223,35 +248,40 @@ class SegmentationWorker(BaseWorker):
         self.channel = channel
         self.threshold = threshold
 
+    def initialise(self, slide_path, channel, threshold):
+        self.slide_path = slide_path
+        self.channel = channel
+        self.threshold = threshold
+
     def run(self):
         """
         Called when the start() method is called on the instance
 
         Emits the regions segmented
         """
-        try:
-            with SlideImage(self.slide_path) as slide:
-                mode = slide.microscope_mode
-                lo = slide.low_resolution_image()
-                factor = slide.scale_factor
+        # try:
+        with SlideImage(self.slide_path) as slide:
+            mode = slide.microscope_mode
+            lo = slide.low_resolution_image()
+            factor = slide.scale_factor
 
-            segmenter = SegmentSlide(
-                mode, factor, channel=self.channel,
-                thresh_method='manual', threshold=self.threshold
-            )
-            self.segmentation_finished.emit(segmenter.run(lo))
-        except:
-            pass
+        segmenter = SegmentSlide(
+            mode, factor, channel=self.channel,
+            thresh_method='manual', threshold=self.threshold
+        )
+        self.segmentation_finished.emit(segmenter.run(lo))
+        # except:
+        #     pass
 
 
 class ThresholdWorker(BaseWorker):
     """
-    Thread for finding Otsu threshold for each channel
+    Thread for finding auto threshold for each channel
     in a SlideImage
     """
     threshold_finished = pyqtSignal(list)
 
-    def __init__(self, slide_path=None, method='auto'):
+    def __init__(self, slide_path=None, method='otsu'):
         """
         Constructor
 
@@ -260,6 +290,26 @@ class ThresholdWorker(BaseWorker):
         """
         super().__init__()
         self.slide_path = slide_path
+        self.method = method
+
+    def initialise(self, slide_path, method):
+        self.slide_path = slide_path
+        self.method = method
+
+    def _auto_threshold(self, plane, method='otsu'):
+        if 'isodata' in method:
+            thresh = threshold_isodata(plane)        
+        elif 'mean' in method:
+            thresh = threshold_mean(plane)
+        elif 'otsu' in method:
+            thresh = threshold_otsu(plane)
+        elif 'triangle' in method:
+            thresh = threshold_triangle(plane)
+        elif 'yen' in method:
+            thresh = threshold_yen(plane)
+        else:
+            raise NotImplementedError('thresholding method not supported')
+        return thresh
 
     def run(self):
         """
@@ -267,17 +317,18 @@ class ThresholdWorker(BaseWorker):
 
         Emits a list of Otsu determined threshold levels
         """
-        try:
-            with SlideImage(self.slide_path) as slide:
-                size_c = slide.size_c
-                thresh = []
-                for c in range(size_c):
-                    hist = slide.get_histogram(c=c)
-                    thresh.append(threshold_otsu(hist))
+        # try:
+        with SlideImage(self.slide_path) as slide:
+            low = slide.low_resolution_image()
+            size_c = slide.size_c
+            thresh = []
+            for c in range(size_c):
+                plane = low[c, :, :]                    
+                thresh.append(self._auto_threshold(plane, self.method))
 
-            self.threshold_finished.emit(thresh)
-        except:
-            pass
+        self.threshold_finished.emit(thresh)
+        # except:
+        #     pass
 
 
 class HistogramWorker(BaseWorker):

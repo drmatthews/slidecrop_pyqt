@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>299</width>
-    <height>161</height>
+    <height>178</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -18,21 +18,40 @@
     <normaloff>:/newPrefix/icon.ico</normaloff>:/newPrefix/icon.ico</iconset>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <widget class="QWidget" name="verticalLayoutWidget">
-    <property name="geometry">
-     <rect>
-      <x>10</x>
-      <y>10</y>
-      <width>281</width>
-      <height>141</height>
-     </rect>
-    </property>
-    <layout class="QVBoxLayout" name="verticalLayout">
-     <item>
-      <widget class="QWidget" name="histogram_widget" native="true"/>
-     </item>
-    </layout>
-   </widget>
+   <layout class="QVBoxLayout" name="verticalLayout">
+    <item>
+     <widget class="QWidget" name="histogram_widget" native="true"/>
+    </item>
+    <item>
+     <widget class="QComboBox" name="method_combo">
+      <item>
+       <property name="text">
+        <string>Isodata</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>Mean</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>Otsu</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>Triangle</string>
+       </property>
+      </item>
+      <item>
+       <property name="text">
+        <string>Yen</string>
+       </property>
+      </item>
+     </widget>
+    </item>
+   </layout>
   </widget>
  </widget>
  <resources>

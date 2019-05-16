@@ -168,7 +168,7 @@ class SlideViewer(QtWidgets.QGraphicsView):
         if os.path.isfile(path):
             self.parent._importImage(path)
         elif os.path.isdir(path):
-            self.parent.batch_dialog = BatchDialog(self, path)
+            self.parent.batch_dialog = BatchDialog(self.parent, path)
 
             if not self.parent.batch_dialog.isVisible():          
                 self.parent.batch_dialog.show()
@@ -271,7 +271,7 @@ class Window(QtWidgets.QMainWindow):
         url = event.mimeData().urls()[0]
         path = url.toLocalFile()
         if os.path.isfile(path):
-            self._importImage(path)
+            self.importImage(path)
         elif os.path.isdir(path):
             self.batch_dialog = BatchDialog(self, path)
 
@@ -301,7 +301,13 @@ class Window(QtWidgets.QMainWindow):
             QtWidgets.QFileDialog.getOpenFileName(self,
                 "Load Slide", self.basepath, "*.ims")
         )
-        self._importImage(filepath[0])
+        self.importImage(filepath[0])
+
+    def importImage(self, filepath):
+        if filepath:
+            self.viewer.clearScene()
+            self.import_worker.slide_path = filepath
+            self.import_worker.start()
 
     def thresholdClicked(self):
         """
@@ -362,6 +368,7 @@ class Window(QtWidgets.QMainWindow):
             # respond to the segmentation thread finishing
             self.segmentation_worker.segmentation_finished.connect(self.onSegmentationFinished)     
             self.segmentation_worker.start()
+
 
     def cropClicked(self):
         """
@@ -468,7 +475,7 @@ class Window(QtWidgets.QMainWindow):
 
     def onChannelChange(self):
         """
-        Not needed - no channel combs currently in use
+        Responds to clicking on tabs
         """
         idx = self.ui.slide_tabWidget.currentIndex() - 1
         if self.curr_img is not None:
@@ -490,7 +497,6 @@ class Window(QtWidgets.QMainWindow):
             self._updateDisplayImage(self.curr_channel, show_mask=show_mask)
 
     def onThresholdFinished(self, result):
-        print('result {}'.format(result))
         if result:
             self.threshold = result
 
@@ -523,12 +529,6 @@ class Window(QtWidgets.QMainWindow):
             self.progress_dialog.close()
 
     # helpers
-    def _importImage(self, filepath):
-        if filepath:
-            self.viewer.clearScene()
-            self.import_worker.slide_path = filepath
-            self.import_worker.start()
-
     def _updateDisplayImage(self, channel, show_mask=True):
         """
         Updates the display of the low resolution slide image
@@ -573,7 +573,7 @@ class Window(QtWidgets.QMainWindow):
 
         qimg = QtGui.QImage(img_RGB.data, w, h, QtGui.QImage.Format_RGBA8888)
 
-        self.viewer.setSlide(qimg)
+        self.viewer.setSlide(qimg)     
 
     def _lineMoved(self, line):
         """

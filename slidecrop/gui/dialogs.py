@@ -1,3 +1,4 @@
+# this has grown quite big - should probably split into separate files
 import os
 
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -49,6 +50,10 @@ class HistogramGraph(pg.GraphicsLayoutWidget):
         self.fillbrush = (30, 30, 30)
         self.linepen = (200, 200, 100)
 
+        # the following is probably changing the size policy
+        # preventing the graph being resized
+
+        # TODO set size and figure out how to allow resizing
         self.resize(279, 139)
 
     def plot(self):
@@ -79,10 +84,40 @@ class ThresholdDialog(QtWidgets.QMainWindow):
         self.parent = parent
         self.ui = thresh_UI.Ui_MainWindow()
         self.ui.setupUi(self)
+
+        self.thresh_worker = ThresholdWorker()
+        self.thresh_worker.threshold_finished.connect(self.updateHistogramAndDisplay)
+
+        # set the combo box to 'otsu'
+        self.ui.method_combo.setCurrentIndex(2)
+        self.ui.method_combo.currentIndexChanged.connect(self.onMethodChange)
         self.histogram = HistogramGraph(self.ui.histogram_widget, data, threshold)
+
+    def onMethodChange(self, val):
+        print('method change called')
+        method = self.ui.method_combo.currentText().lower()
+        self.thresh_worker.initialise(self.parent.slide_path, method)
+        # lauch a threshold worker to recalculate the
+        # channel thresholds
+        self.thresh_worker.start()
+
+    def updateHistogramAndDisplay(self, result):
+        # update the graph - line position
+        self.histogram.threshold = result
+        self.histogram.plot()
+        # new threshold line is created so 
+        # force update of display
+        # note that this should probably be done
+        # by emitting a signal
+        channel = self.parent.curr_channel
+        if isinstance(channel, str):
+            channel = 0
+        self.parent.threshold[channel] = result[channel]
+        self.parent._updateDisplayImage(self.parent.curr_channel)    
 
     def closeEvent(self, event):
         dchannel = self.parent.curr_channel
+        # update display - should probably emit a signal
         self.parent._updateDisplayImage(dchannel, show_mask=False)
 
 
@@ -123,12 +158,20 @@ class SegmentationDialog(QtWidgets.QMainWindow):
 
 class BatchTable(QtWidgets.QWidget):
 
-    def __init__(self, parent=None, table_widget=None):
+    def __init__(self, parent, dialog=None, table_widget=None):
 
         super(BatchTable, self).__init__(table_widget)
         self.parent = parent
+        self.dialog = dialog
         self.table_widget = table_widget
         self.table_widget.setSelectionBehavior(QtWidgets.QTableView.SelectRows)
+        self.table_widget.setSelectionMode(QtWidgets.QTableView.SingleSelection)
+
+        self.thresh_worker = ThresholdWorker()
+        self.thresh_worker.threshold_finished.connect(self.updateThresholdCell)
+
+        self.segmentation_worker = SegmentationWorker()
+        self.segmentation_worker.segmentation_finished.connect(self.updateSlideViewer)
 
     def update(self, folder, channels, thresholds):
         self.table_widget.clear()
@@ -139,60 +182,152 @@ class BatchTable(QtWidgets.QWidget):
                     file_count += 1
 
             self.table_widget.setRowCount(file_count)
-            self.table_widget.setColumnCount(5)
-            self.table_widget.setHorizontalHeaderLabels(['Filename', 'Channels', 'Thresholds', 'Segmentation Channel', ''])
+            self.table_widget.setColumnCount(7)
+            self.table_widget.setHorizontalHeaderLabels(
+                ['Progress', 'Filename', 'Channels', 'Segmentation Channel',
+                 'Thresholds', 'Threshold method', '']
+            )
 
+            # should probably make column numbers globals
             header = self.table_widget.horizontalHeader()
             rid = 0
             self.bars = []
+            self.combos = []
+            self.preview_btns = []
             for filename in os.listdir(folder):
                 if filename.endswith('.ims'):
+
+                    # add progress bar cell
+                    bar = QtWidgets.QProgressBar()
+                    bar.setValue(0)
+                    bar.setTextVisible(True)
+                    self.bars.append(bar)
+                    self.table_widget.setCellWidget(rid, 0, bar)
+                    header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+                    
+                    # add filename cell
                     fname = QtWidgets.QTableWidgetItem('{}'.format(filename))
                     fname.setFlags(QtCore.Qt.ItemIsEnabled)
-                    self.table_widget.setItem(rid, 0, fname)
-                    header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
-
+                    self.table_widget.setItem(rid, 1, fname)
+                    header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+                    
+                    # add channel cell
                     chan = QtWidgets.QTableWidgetItem('{}'.format(channels[rid]))
                     chan.setFlags(QtCore.Qt.ItemIsEnabled)
-                    self.table_widget.setItem(rid, 1, chan)
-                    header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
-
-                    thresh = QtWidgets.QTableWidgetItem('{}'.format(thresholds[rid]))
-                    self.table_widget.setItem(rid, 2, thresh)
+                    self.table_widget.setItem(rid, 2, chan)
                     header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
 
+                    # add segmentation channel cell
                     seg_chan = QtWidgets.QTableWidgetItem('0')
                     self.table_widget.setItem(rid, 3, seg_chan)
-                    header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
+                    header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)                    
 
-                    bar = QtWidgets.QProgressBar()
-                    self.bars.append(bar)
-                    self.table_widget.setCellWidget(rid, 4, bar)
-                    header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)              
+                    # add threshold values cell
+                    thresh = QtWidgets.QTableWidgetItem('{}'.format(thresholds[rid]))
+                    self.table_widget.setItem(rid, 4, thresh)
+                    header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)
+
+                    # add threshold method cell
+                    combo = QtWidgets.QComboBox()
+                    combo_items = ['Isodata', 'Mean', 'Otsu', 'Triangle', 'Yen']
+                    combo.addItems(combo_items)
+                    combo.setCurrentIndex(2)
+                    combo.currentIndexChanged.connect(self.methodChanged)
+                    self.combos.append(combo)
+                    self.table_widget.setCellWidget(rid, 5, combo)
+                    header.setSectionResizeMode(5, QtWidgets.QHeaderView.ResizeToContents)   
+              
+                    # add threshold method cell
+                    btn = QtWidgets.QPushButton()
+                    btn.setText('Preview')
+                    btn.clicked.connect(self.previewClicked)
+                    self.preview_btns.append(btn)
+                    self.table_widget.setCellWidget(rid, 6, btn)
+                    header.setSectionResizeMode(6, QtWidgets.QHeaderView.ResizeToContents)
                     
-                    rid += 1          
+                    rid += 1
 
-    def tableBtnClick(self):
-        pass
+    def methodChanged(self):
+        """
+        Triggered when a combo box in the table changed
+        """
+        # get the row number
+        selected_rows = self.table_widget.selectionModel().selectedRows()
+        rid = selected_rows[0].row()
 
-    def _thresholdCell(self, row):
-        thresh_str = self.table_widget.item(row, 2).text()
-        return [float(t) for t in thresh_str.split(',')]
+        # get the filename and create path to slide
+        filename = self.table_widget.item(rid, 1).text()
+        slide_path = os.path.join(self.dialog.folder, filename)
+        method = self.combos[rid].currentText().lower()
+
+        # lauch a threshold worker to recalculate the
+        # channel thresholds
+        self.thresh_worker.initialise(slide_path, method)
+        self.thresh_worker.start()
+
+    def updateThresholdCell(self, result):
+        # get the row number
+        selected_rows = self.table_widget.selectionModel().selectedRows()
+        rid = selected_rows[0].row()
+
+        thresholds = ', '.join('{:.2f}'.format(t) for t in result)
+        item = QtWidgets.QTableWidgetItem('{}'.format(thresholds))
+        self.table_widget.setItem(rid, 4, item)
+
+    def previewClicked(self):
+        # get the row number
+        selected_rows = self.table_widget.selectionModel().selectedRows()
+        rid = selected_rows[0].row()
+
+        # get the filename and create path to slide
+        filename = self.table_widget.item(rid, 1).text()
+        slide_path = os.path.join(self.dialog.folder, filename)
+
+        self.parent.importImage(slide_path)
+        self._runSegmentation()
+
+    def updateSlideViewer(self, result):
+        if result:
+            rois = []
+            for r in result:
+                roi = ROIItem(self.parent, QtCore.QRectF(*r.roi))
+                rois.append(roi)
+                self.parent.viewer.addROI(roi)
+
+            self.parent.roi_table.update(rois)
+            self.parent.scaled_regions = result
 
     def getRows(self):
         rows = []
         for r in range(self.table_widget.rowCount()):
             row = []
-            # get slide path from first column
-            row.append(self.table_widget.item(r, 0).text())
-            # get the number of channels from the second
-            row.append(int(self.table_widget.item(r, 1).text()))
-            # get the threshold values as a list from the third
-            row.append(self._thresholdCell(r))
+            # get slide path from second column
+            row.append(self.table_widget.item(r, 1).text())
+            # get the number of channels from the third
+            row.append(int(self.table_widget.item(r, 2).text()))
             # get the segmentation channel from the fourth
-            row.append(int(self.table_widget.item(r, 3).text()))
+            row.append(int(self.table_widget.item(r, 3).text()))            
+            # get the threshold values as a list from the fifth
+            row.append(self._getThresholdCell(r))
             rows.append(row)
         return rows
+
+    def _getThresholdCell(self, row):
+        thresh_str = self.table_widget.item(row, 4).text()
+        return [float(t) for t in thresh_str.split(',')]
+
+    def _runSegmentation(self):
+        selected_rows = self.table_widget.selectionModel().selectedRows()
+        rid = selected_rows[0].row()
+
+        # get the filename and create path to slide
+        filename = self.table_widget.item(rid, 1).text()
+        slide_path = os.path.join(self.dialog.folder, filename)
+        seg_channel = int(self.table_widget.item(rid, 3).text())        
+        threshold = self._getThresholdCell(rid)[seg_channel]
+
+        self.segmentation_worker.initialise(slide_path, seg_channel, threshold)
+        self.segmentation_worker.start()
 
 
 class BatchDialog(QtWidgets.QMainWindow):
@@ -202,17 +337,18 @@ class BatchDialog(QtWidgets.QMainWindow):
         self.folder = folder
         self.channels = []
         self.thresholds = []
+        self.threshold_method = 'otsu'
         
         self.init_ui()
 
         if folder:
             self.ui.folder_edit.setText(folder)
-            self._parseSlides(folder)
+            self.parseSlides(folder, self.threshold_method)
 
     def init_ui(self):
         self.ui = batch_UI.Ui_MainWindow()
         self.ui.setupUi(self)
-        self.batch_table = BatchTable(self, self.ui.batch_table_widget)
+        self.batch_table = BatchTable(self.parent, self, self.ui.batch_table_widget)
 
         self.ui.folder_btn.clicked.connect(self.folderClicked)
         self.ui.run_btn.clicked.connect(self.runClicked)
@@ -220,8 +356,8 @@ class BatchDialog(QtWidgets.QMainWindow):
         self.ui.stop_btn.hide()
 
         self.import_worker = BatchSlideParseWorker()
-        self.import_worker.parse_done.connect(self._updateParameters)
-        self.import_worker.parse_done[str].connect(self._parseCancelled)
+        self.import_worker.parse_done.connect(self.updateParameters)
+        self.import_worker.parse_done[str].connect(self.parseCancelled)
 
         self.worker = BatchCropWorker()
         self.worker.segmentation_finished.connect(self.setTableBarMax)
@@ -233,7 +369,7 @@ class BatchDialog(QtWidgets.QMainWindow):
         if folder:
             self.folder = folder
             self.ui.folder_edit.setText(folder)
-            self._parseSlides(folder)
+            self.parseSlides(folder, self.threshold_method)
 
     def runClicked(self):
         # get the rows from the table
@@ -251,17 +387,20 @@ class BatchDialog(QtWidgets.QMainWindow):
         try:
             input_paths = []
             output_dirs = []
+            seg_channels = []            
             thresholds = []
-            seg_channels = []
+            threshold_methods = []
             for row in rows:
                 filename = row[0]
                 input_paths.append(os.path.join(self.folder, filename))
                 output_dirs.append(self.folder)
-                seg_channel = row[3]
+                seg_channel = row[2]
                 seg_channels.append(seg_channel)
-                thresholds.append(row[2][seg_channel])
-
-            self._runBatch(input_paths, output_dirs, thresholds, seg_channels)    
+                thresholds.append(row[3][seg_channel])
+            self._runBatch(
+                input_paths, output_dirs,
+                seg_channels, thresholds
+            )
         except:
             pass
 
@@ -271,6 +410,26 @@ class BatchDialog(QtWidgets.QMainWindow):
                 self.worker.stop()
                 for bar in self.batch_table.bars:
                     bar.setValue(0)
+
+    def parseSlides(self, folder, method):
+        if os.path.isdir(folder):
+            count = 0
+            for filename in os.listdir(folder):
+                if filename.endswith('.ims'):
+                    count += 1
+            self.import_progress = Progress(self, count - 1, 'Slide import')
+            self.import_worker.initialise(folder, method)
+            self.import_worker.progress.connect(self.updateImportProgress)
+            self.import_worker.finished.connect(self.importFinished)
+            self.import_worker.start()
+
+            if not self.import_progress.isVisible():          
+                self.import_progress.show()
+
+    def parseCancelled(self):
+        print("import didn't work")
+        self.channels = ''
+        self.thresholds = ''
 
     def setTableBarMax(self, val):
         bar = self.batch_table.bars[val[0]]
@@ -292,30 +451,9 @@ class BatchDialog(QtWidgets.QMainWindow):
 
     def importFinished(self):
         if self.import_progress.isVisible():
-            self.import_progress.close()            
+            self.import_progress.close()
 
-    def _parseSlides(self, folder):
-        if os.path.isdir(folder):
-            count = 0
-            for filename in os.listdir(folder):
-                if filename.endswith('.ims'):
-                    count += 1
-            print(count)
-            self.import_progress = Progress(self, count - 1, 'Slide import')
-            self.import_worker.initialise(folder)
-            self.import_worker.progress.connect(self.updateImportProgress)
-            self.import_worker.finished.connect(self.importFinished)
-            self.import_worker.start()
-
-            if not self.import_progress.isVisible():          
-                self.import_progress.show()
-
-    def _parseCancelled(self):
-        print("import didn't work")
-        self.channels = ''
-        self.thresholds = ''
-
-    def _updateParameters(self, results):
+    def updateParameters(self, results):
         if results:
             channels = [str(c) for c in results[0]]
             thresholds = []
@@ -324,6 +462,6 @@ class BatchDialog(QtWidgets.QMainWindow):
 
             self.batch_table.update(self.folder, channels, thresholds)
 
-    def _runBatch(self, input_paths, output_dirs, thresholds, seg_channels):
+    def _runBatch(self, input_paths, output_dirs, seg_channels, thresholds):
         self.worker.initialise(input_paths, output_dirs, seg_channels, thresholds)
         self.worker.start()
