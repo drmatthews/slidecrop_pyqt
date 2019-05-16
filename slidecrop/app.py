@@ -4,11 +4,8 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 import numpy as np
 
 import slidecrop.gui.main_ui as UI
-from slidecrop.gui.dialogs import (
-    ThresholdDialog,
-    SegmentationDialog,
-    BatchDialog
-)
+from slidecrop.gui.threshold import ThresholdDialog
+from slidecrop.gui.batch import BatchDialog
 from slidecrop.gui.progress import Progress
 from slidecrop.ims.slide import SlideImage
 from slidecrop.gui.threads import (
@@ -166,7 +163,7 @@ class SlideViewer(QtWidgets.QGraphicsView):
         url = event.mimeData().urls()[0]
         path = url.toLocalFile()
         if os.path.isfile(path):
-            self.parent._importImage(path)
+            self.parent.importImage(path)
         elif os.path.isdir(path):
             self.parent.batch_dialog = BatchDialog(self.parent, path)
 
