@@ -48,15 +48,15 @@ INSTALLATION
 
 Requires:
 
-Python 3.6+
-pyqt5
-pyqtgraph
-h5py
-numpy
-scipy
-matplotlib
-scikit-image
-tifffile
+Python 3.6+  
+pyqt5  
+pyqtgraph  
+h5py  
+numpy  
+scipy  
+matplotlib  
+scikit-image  
+tifffile  
 
 It is recommended to install into a virtual environment.
 
