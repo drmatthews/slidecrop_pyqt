@@ -6,7 +6,7 @@ This repository holds a reimplentation of the original
 PyQt instead of WxPython.
 
 The app allows a user to segment regions of microscope images recorded
-using a slide scanner (either brightfield or fluorescence) and stored
+using a MetaSystems slide scanner (either brightfield or fluorescence) and stored
 in BitPlane Imaris (*.ims) format - no other file formats are currently
 supported. The full resolution image is too large to be processed in 
 memory. It does this by segmenting a low resolution version of the image
