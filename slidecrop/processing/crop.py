@@ -33,20 +33,20 @@ class CropSlide:
             self.seg_level = self.slide.segmentation_level
 
         self.threshold_method = threshold_method
+        self.threshold = threshold
         if 'manual' in self.threshold_method:
-            try:
-                self.threshold = threshold
-            except:
-                print('You must supply a value for thresholding')
+            if self.threshold is None:
+                raise ValueError('You must supply a value for thresholding')
+
         self.rotation = rotation
         self._crop()
-
+        self.slide.close()
 
     def _segment(self):
         plane = self.slide.low_resolution_image()
         segmenter = SegmentSlide(
             self.mode, self.scale_factor, channel=self.seg_channel,
-            thresh_method='manual', threshold=self.threshold
+            thresh_method=self.threshold_method, threshold=self.threshold
         )
         return segmenter.run(plane)
 
@@ -70,5 +70,3 @@ class CropSlide:
 
         toc = time.time()
         print(toc - tic)
-
-        self.slide.close()

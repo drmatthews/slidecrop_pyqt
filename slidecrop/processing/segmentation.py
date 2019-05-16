@@ -72,7 +72,9 @@ class SegmentSlide:
         elif 'yen' in method:
             thresh = threshold_yen(plane)
         else:
-            raise NotImplementedError('thresholding method not supported')
+            raise NotImplementedError(
+                'thresholding method not supported'
+            )
         return self._apply_threshold(plane, thresh)
 
     def _manual_threshold(self, plane, thresh):
