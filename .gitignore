@@ -1,4 +1,7 @@
 *.pyc
 __pycache__/
+build
+dist
+slidecrop_pyqt.egg-info/
 .vscode
-slidecrop/test_data
+test_data

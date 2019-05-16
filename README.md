@@ -1,3 +1,6 @@
+DESCRIPTION
+-----------
+
 This repository holds a reimplentation of the original 
 [SlideCrop](https://github.com/QBI-Microscopy/SlideCrop "SlideCrop") app using
 PyQt instead of WxPython.
@@ -39,3 +42,30 @@ image has not yet been implemented but regions produced automatically are editab
 This version does not rely on libtiff (the old version used a hack in Pylibtiff to write tiled
 images) and uses TiffFile instead. When regions are > 4096 in any dimension the ome-tiff is written
 as a tiled image using numpy memmaps.
+
+INSTALLATION
+------------
+
+Requires:
+
+Python 3.6+
+pyqt5
+pyqtgraph
+h5py
+numpy
+scipy
+matplotlib
+scikit-image
+tifffile
+
+It is recommended to install into a virtual environment.
+
+Download, unzip and install from folder using:
+```
+pip install .
+```
+
+Install from Github using:
+```
+pip install git+https://github.com/drmatthews/slidecrop_pyqt.git
+```
