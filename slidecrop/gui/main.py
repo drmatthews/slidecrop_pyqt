@@ -19,6 +19,7 @@ from .roi import ROITable
 from .roi import ROIItem
 from ..ims.slide import SlideImage
 
+
 class SlideViewer(QtWidgets.QGraphicsView):
     """
     QGraphicsView for displaying and interacting with
@@ -198,9 +199,12 @@ class Window(QtWidgets.QMainWindow):
     """
     The main GUI window.
     """
-    def __init__(self):
+    def __init__(self, filepath=None):
         super(Window, self).__init__()
         self.initUI()
+        print(filepath)
+        if filepath:
+            self.importImage(filepath)
 
     def initUI(self):
         self.setAcceptDrops(True)
