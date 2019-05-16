@@ -1,10 +1,10 @@
 import numpy as np
 
-from slidecrop.ims.slide import SlideImage
-from slidecrop.processing.otsu import threshold_otsu
+from ..ims.slide import SlideImage
+from ..processing.otsu import threshold_otsu
 
 edges = np.arange(256)
-with SlideImage('.\\slidecrop\\test_data\\rgb1.ims') as slide:
+with SlideImage('.\\test_data\\rgb1.ims') as slide:
 
     thresholds = []
     for c in range(slide.size_c):

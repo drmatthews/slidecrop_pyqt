@@ -3,12 +3,11 @@ import os
 from PyQt5 import QtCore, QtGui, QtWidgets
 import numpy as np
 
-import slidecrop.gui.main_ui as UI
-from slidecrop.gui.threshold import ThresholdDialog
-from slidecrop.gui.batch import BatchDialog
-from slidecrop.gui.progress import Progress
-from slidecrop.ims.slide import SlideImage
-from slidecrop.gui.threads import (
+from . import main_ui as UI
+from .threshold import ThresholdDialog
+from .batch import BatchDialog
+from .progress import Progress
+from .threads import (
     SlideImportWorker,
     SegmentationWorker,
     HistogramWorker,
@@ -16,9 +15,9 @@ from slidecrop.gui.threads import (
     OMEWorker,
     BatchCropWorker
 )
-from slidecrop.gui.roi import ROITable
-from slidecrop.gui.roi import ROIItem
-
+from .roi import ROITable
+from .roi import ROIItem
+from ..ims.slide import SlideImage
 
 class SlideViewer(QtWidgets.QGraphicsView):
     """

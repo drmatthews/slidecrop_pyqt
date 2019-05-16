@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QApplication
 
-from slidecrop.gui.main import Window
+from .gui.main import Window
 
 
 def run():

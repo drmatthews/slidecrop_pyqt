@@ -17,10 +17,10 @@ from skimage.filters import (
 )
 
 # from slidecrop.processing.otsu import threshold_otsu
-from slidecrop.ims.slide import SlideImage
-from slidecrop.processing.segmentation import SegmentSlide
-from slidecrop.ome.ome_tiff_generator import OMETiffGenerator
-from slidecrop.processing.crop import CropSlide
+from ..ims.slide import SlideImage
+from ..processing.crop import CropSlide
+from ..processing.segmentation import SegmentSlide
+from ..ome.ometiff import OMETiffGenerator
 
 
 # need to move over to this to tidy up threading

@@ -1,8 +1,8 @@
 import os
 import argparse
 
-from slidecrop.utils.slide import SlideImage
-from slidecrop.utils.ome_tiff_generator import OmeTiffGenerator
+from ..ims.slide import SlideImage
+from ..ome.ometiff import OmeTiffGenerator
 
 
 def crop_slide(filepath, parameters):

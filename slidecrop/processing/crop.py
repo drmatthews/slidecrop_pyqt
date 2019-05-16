@@ -1,9 +1,9 @@
 import os
 import time
 
-from slidecrop.ims.slide import SlideImage
-from slidecrop.processing.segmentation import SegmentSlide
-from slidecrop.ome.ome_tiff_generator import OMETiffGenerator
+from ..ims.slide import SlideImage
+from ..ome.ometiff import OMETiffGenerator
+from .segmentation import SegmentSlide
 
 
 class CropSlide:

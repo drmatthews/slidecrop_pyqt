@@ -5,8 +5,8 @@ import pyqtgraph as pg
 
 from numpy import arange, max, nonzero
 
-import slidecrop.gui.threshold_ui as thresh_UI
-from slidecrop.gui.threads import ThresholdWorker
+from . import threshold_ui as thresh_UI
+from .threads import ThresholdWorker
 
 
 pg.setConfigOptions(antialias=True)

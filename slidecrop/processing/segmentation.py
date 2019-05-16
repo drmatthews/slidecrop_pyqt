@@ -17,7 +17,6 @@ from skimage.filters import (
     threshold_triangle,
     threshold_yen
 )
-# from slidecrop.processing.otsu import threshold_otsu
 
 
 class ImageRegion:

@@ -2,14 +2,14 @@ import os
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-import slidecrop.gui.batch_ui as batch_UI
-from slidecrop.gui.progress import Progress
-from slidecrop.gui.threads import ThresholdWorker
-from slidecrop.gui.threads import SegmentationWorker
-from slidecrop.gui.threads import BatchSegmentationWorker
-from slidecrop.gui.threads import BatchSlideParseWorker
-from slidecrop.gui.threads import BatchCropWorker
-from slidecrop.gui.roi import ROIItem
+from . import batch_ui as batch_UI
+from .progress import Progress
+from .threads import ThresholdWorker
+from .threads import SegmentationWorker
+from .threads import BatchSegmentationWorker
+from .threads import BatchSlideParseWorker
+from .threads import BatchCropWorker
+from .roi import ROIItem
 
 
 class BatchTable(QtWidgets.QWidget):

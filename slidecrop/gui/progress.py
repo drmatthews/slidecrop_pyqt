@@ -1,6 +1,6 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-import slidecrop.gui.progress_ui as UI
+from . import progress_ui as UI
 
 
 class Progress(QtWidgets.QMainWindow):

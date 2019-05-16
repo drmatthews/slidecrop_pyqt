@@ -46,4 +46,4 @@ class Ui_MainWindow(object):
         self.method_combo.setItemText(4, _translate("MainWindow", "Yen"))
 
 
-import slidecrop.resources.resources_rc
+from .. resources import resources_rc

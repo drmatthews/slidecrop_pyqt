@@ -48,4 +48,4 @@ class Ui_MainWindow(object):
         self.segment_button.setText(_translate("MainWindow", "Run"))
 
 
-import slidecrop.resources.resources_rc
+from .. resources import resources_rc

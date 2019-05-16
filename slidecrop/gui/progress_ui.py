@@ -32,4 +32,4 @@ class Ui_MainWindow(object):
         MainWindow.setWindowTitle(_translate("MainWindow", "Progess"))
 
 
-import slidecrop.resources.resources_rc
+from .. resources import resources_rc

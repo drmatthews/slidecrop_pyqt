@@ -3,10 +3,10 @@ import matplotlib.pyplot as plt
 from skimage import data
 from skimage.filters import try_all_threshold
 
-from slidecrop.ims.slide import SlideImage
+from ..ims.slide import SlideImage
 
 
-with SlideImage('.\\slidecrop\\test_data\\rgb1.ims') as slide:
+with SlideImage('.\\test_data\\rgb1.ims') as slide:
 
     low = slide.low_resolution_image()
     plane = low[2, :, :]

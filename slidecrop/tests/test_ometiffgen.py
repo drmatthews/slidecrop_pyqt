@@ -1,14 +1,12 @@
 import time
 
-from joblib import Parallel, delayed
+from ..ome.ometiff import OMETiffGenerator
+from ..ims.slide import SlideImage
 
-from slidecrop.utils.ome_tiff_generator import OMETiffGenerator
-from slidecrop.utils.slide import SlideImage
-from slidecrop.utils.ome_tiff_generator import OMETiffGenerator
     
-with SlideImage('.\\slidecrop\\test_data\\rgb.ims') as slide:
+with SlideImage('.\\test_data\\rgb1.ims') as slide:
 
-    outputdir = '.\\slidecrop\\test_data\\'
+    outputdir = '.\\test_data\\'
     channels = [0, 1, 2]
     regions = [
         [97, 11200, 1633, 1696],

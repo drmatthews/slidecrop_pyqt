@@ -117,4 +117,4 @@ class Ui_MainWindow(object):
         self.actionBatch.setText(_translate("MainWindow", "Batch"))
 
 
-import slidecrop.resources.resources_rc
+from .. resources import resources_rc
