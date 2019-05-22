@@ -38,6 +38,7 @@ class SlideImage:
             self._crop_level = 0
             self._scale_factor = self.scale_factor
             self._microscope_mode = ''
+            self.is_closed = False
         else:
             raise IOError('File does not exist or is not an ims file')
 
@@ -64,11 +65,20 @@ class SlideImage:
         """
         return str(b''.join(byte_list).decode('utf-8'))
 
+    def open(self):
+        """
+        Create an h5py file handle
+        """
+        if self.filepath and self.is_closed:
+            self.slide = h5py.File(self.filepath,'r')
+            self.is_closed = False
+            
     def close(self):
         """
         Close the HDF5 file handle
         """
         self.slide.close()
+        self.is_closed = True
 
     def get_histogram(self, r=None, t=0, c=0):
         """

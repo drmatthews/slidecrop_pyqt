@@ -220,7 +220,6 @@ class BatchSlideParseWorker(BaseWorker):
                 self.progress.emit(count)
                 time.sleep(0.2)
                 count += 1
-        print(count)
         self.parse_done.emit((channels, thresholds))
         # except:
         #     self.parse_done[str].emit("")

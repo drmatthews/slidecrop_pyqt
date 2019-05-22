@@ -31,6 +31,8 @@ class SlideViewer(QtWidgets.QGraphicsView):
     def __init__(self, parent=None, widget=None):
         super(SlideViewer, self).__init__(widget)
         self.parent = parent
+        self.tabs = widget
+        self.tabs.setTabText(0, 'All')        
         self.viewport_geometry = (0, 20, 427, 561)
         self.setGeometry(*self.viewport_geometry)
         self._zoom = 0
@@ -50,12 +52,22 @@ class SlideViewer(QtWidgets.QGraphicsView):
 
         sizePolicy = QtGui.QSizePolicy(
             QtGui.QSizePolicy.MinimumExpanding,
-            QtGui.QSizePolicy.MinimumExpanding)
+            QtGui.QSizePolicy.MinimumExpanding
+        )
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.sizePolicy().hasHeightForWidth())
         self.setSizePolicy(sizePolicy)
-        self.setMinimumSize(QtCore.QSize(431, 541))        
+        self.setMinimumSize(QtCore.QSize(431, 541))
+
+    def clear(self):
+        self._empty = True
+        self._zoom = 0
+        self.factor = None
+        self._scene.clear()
+        self._clearTabs()
+        self._slide = QtWidgets.QGraphicsPixmapItem()
+        self._scene.addItem(self._slide)        
 
     def clearScene(self):
         """
@@ -194,6 +206,20 @@ class SlideViewer(QtWidgets.QGraphicsView):
                 regions.append(item)
         return len(regions)
 
+    def updateTabs(self, channel_names):
+        self._clearTabs()
+        if len(channel_names) == 1:
+            self.tabs.removeTab(0)
+
+        for channel in channel_names:
+            tab = QtWidgets.QWidget()
+            self.tabs.addTab(tab, channel)
+
+    def _clearTabs(self):
+        self.tabs.clear()
+        self.tabs.insertTab(0, QtWidgets.QWidget(), 'All')        
+
+
 
 class Window(QtWidgets.QMainWindow):
     """
@@ -202,7 +228,6 @@ class Window(QtWidgets.QMainWindow):
     def __init__(self, filepath=None):
         super(Window, self).__init__()
         self.initUI()
-        print(filepath)
         if filepath:
             self.importImage(filepath)
 
@@ -220,11 +245,12 @@ class Window(QtWidgets.QMainWindow):
         self.slide_histogram = []
         self.threshold = []
         self.thresh_dialog = None
+        self.batch_dialog = None
+        self.rois = []
         self.scaled_regions = []
 
         # widgets
         self.viewer = SlideViewer(self, self.ui.slide_tabWidget)
-        self.ui.slide_tabWidget.setTabText(0, 'All')
         self.roi_table = ROITable(self, self.ui.roi_list)
 
         # signals
@@ -314,7 +340,13 @@ class Window(QtWidgets.QMainWindow):
         thresholdAction clicked. Opens the threshold dialog.
         """
         if self.curr_img is not None and self.slide_histogram:
-            self._updateDisplayImage(self.curr_channel)
+            
+            # if self.rois:
+            #     # clear the viewer scene
+            #     self.viewer.clearScene()
+
+            #     # clear the roi table
+            #     self.roi_table.clear()
 
             # set the channel to threshold
             channel = self.curr_channel
@@ -326,22 +358,31 @@ class Window(QtWidgets.QMainWindow):
             threshold = self.threshold[channel]
 
             # get the histogram for that channel
-            histogram = self.slide_histogram[channel]
+            data = self.slide_histogram[channel]
 
             # open the threshold dialog
-            self.thresh_dialog = ThresholdDialog(
-                self, histogram, threshold
-            )
+            self.thresh_dialog = ThresholdDialog(self)
 
             # plot the histogram
-            self.thresh_dialog.histogram.plot()
+            self.thresh_dialog.updatePlot(threshold, data)
 
             # respond to changes in the threshold line
-            thresh_line = self.thresh_dialog.histogram.thresh_line
+            thresh_line = self.thresh_dialog.thresh_line
             thresh_line.sigPositionChangeFinished.connect(self._lineMoved)
 
-            if not self.thresh_dialog.isVisible():          
+            if not self.thresh_dialog.isVisible():
                 self.thresh_dialog.show()
+
+            self._updateDisplayImage(self.curr_channel)
+
+            # start the segmentation thread
+            self.segmentation_worker = SegmentationWorker(
+                self.slide_path, channel, threshold
+            )
+
+            # respond to the segmentation thread finishing
+            self.segmentation_worker.segmentation_finished.connect(self.onSegmentationFinished)     
+            self.segmentation_worker.start()            
 
     def segmentClicked(self):
         """
@@ -417,7 +458,7 @@ class Window(QtWidgets.QMainWindow):
     # slots
     def onImportFinished(self, slide):
         """
-        Responds the importWorker thread.
+        Responds to the importWorker thread.
         """
         self.slide_path = slide.filepath
         self.basepath = os.path.dirname(self.slide_path)
@@ -446,14 +487,7 @@ class Window(QtWidgets.QMainWindow):
         self.roi_table.initTable()
 
         # update the image display tabs
-        self.ui.slide_tabWidget.clear()
-        self.ui.slide_tabWidget.insertTab(0, QtWidgets.QWidget(), 'All')
-        if slide.size_c == 1:
-            self.ui.slide_tabWidget.removeTab(0)
-
-        for channel in range(slide.size_c):
-            tab = QtWidgets.QWidget()
-            self.ui.slide_tabWidget.addTab(tab, self.channel_names[channel])
+        self.viewer.updateTabs(self.channel_names)
 
         # set current channel
         self.curr_channel = 'All'
@@ -477,8 +511,8 @@ class Window(QtWidgets.QMainWindow):
         """
         Responds to clicking on tabs
         """
-        idx = self.ui.slide_tabWidget.currentIndex() - 1
         if self.curr_img is not None:
+            idx = self.viewer.tabs.currentIndex() - 1
             show_mask = False
             channel = idx
             self.curr_channel = idx
@@ -488,10 +522,10 @@ class Window(QtWidgets.QMainWindow):
 
             if self.thresh_dialog and self.thresh_dialog.isVisible():
                 show_mask = True
-                self.thresh_dialog.histogram.data = self.slide_histogram[channel]
-                self.thresh_dialog.histogram.threshold = self.threshold[channel]
-                self.thresh_dialog.histogram.plot()
-                thresh_line = self.thresh_dialog.histogram.thresh_line
+                data = self.slide_histogram[channel]
+                threshold = self.threshold[channel]
+                self.thresh_dialog.updatePlot(threshold, data)
+                thresh_line = self.thresh_dialog.thresh_line
                 thresh_line.sigPositionChangeFinished.connect(self._lineMoved)                
 
             self._updateDisplayImage(self.curr_channel, show_mask=show_mask)
@@ -513,6 +547,7 @@ class Window(QtWidgets.QMainWindow):
                 rois.append(roi)
                 self.viewer.addROI(roi)
 
+            self.rois = rois
             self.roi_table.update(rois)
             self.scaled_regions = result
 
@@ -581,10 +616,37 @@ class Window(QtWidgets.QMainWindow):
         on the thresh_dialog - sets new value for
         threshold.
         """
+        if self.rois:
+            self.viewer.clearScene()
+
         channel = self.curr_channel
         if isinstance(channel, str):
             channel = 0
-        print(line.value())
+
         self.threshold[channel] = line.value()
+        
+        if (self.batch_dialog is not None and
+            self.batch_dialog.isVisible()):
+            print('line at {}'.format(line.value()))
+            self.batch_dialog.batch_table.updateThresholdCell(self.threshold)
+
         self._updateDisplayImage(self.curr_channel)
+
+        # start the segmentation thread
+        self.segmentation_worker = SegmentationWorker(
+            self.slide_path, channel, line.value()
+        )
+
+        # respond to the segmentation thread finishing
+        self.segmentation_worker.segmentation_finished.connect(self.onSegmentationFinished)     
+        self.segmentation_worker.start()
+        
+
+if __name__ == '__main__':
+
+    import sys
+    app = QtWidgets.QApplication(sys.argv)
+    win = Window()
+    win.show()
+    sys.exit( app.exec_() )
 

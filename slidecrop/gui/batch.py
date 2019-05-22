@@ -130,6 +130,14 @@ class BatchTable(QtWidgets.QWidget):
         item = QtWidgets.QTableWidgetItem('{}'.format(thresholds))
         self.table_widget.setItem(rid, 4, item)
 
+    def updateThreshMethodCell(self, val):
+        # get the row number
+        selected_rows = self.table_widget.selectionModel().selectedRows()
+        rid = selected_rows[0].row()
+
+        method = self.combos[rid]
+        method.setCurrentIndex(val)
+
     def previewClicked(self):
         # get the row number
         selected_rows = self.table_widget.selectionModel().selectedRows()
@@ -150,6 +158,7 @@ class BatchTable(QtWidgets.QWidget):
                 rois.append(roi)
                 self.parent.viewer.addROI(roi)
 
+            self.parent.rois = rois
             self.parent.roi_table.update(rois)
             self.parent.scaled_regions = result
 
@@ -186,13 +195,13 @@ class BatchTable(QtWidgets.QWidget):
         self.segmentation_worker.start()
 
 
-class BatchDialog(QtWidgets.QMainWindow):
+class BatchDialog(QtWidgets.QDialog):
     def __init__(self, parent, folder=None):
         super(BatchDialog, self).__init__(parent)
         self.parent = parent
         self.folder = folder
-        self.channels = []
-        self.thresholds = []
+        # self.channels = []
+        # self.thresholds = ''
         self.threshold_method = 'otsu'
         
         self.init_ui()
@@ -200,10 +209,13 @@ class BatchDialog(QtWidgets.QMainWindow):
         if folder:
             self.ui.folder_edit.setText(folder)
             self.parseSlides(folder, self.threshold_method)
+        else:
+            self.restoreTable()
 
     def init_ui(self):
-        self.ui = batch_UI.Ui_MainWindow()
+        self.ui = batch_UI.Ui_Dialog()
         self.ui.setupUi(self)
+
         self.batch_table = BatchTable(self.parent, self, self.ui.batch_table_widget)
 
         self.ui.folder_btn.clicked.connect(self.folderClicked)
@@ -219,6 +231,23 @@ class BatchDialog(QtWidgets.QMainWindow):
         self.worker.segmentation_finished.connect(self.setTableBarMax)
         self.worker.batch_progress.connect(self.updateTableProgressBars)
         self.worker.finished.connect(self.batchFinished)
+
+    def closeEvent(self, event):
+        self.saveTable()
+        if self.parent.curr_img is not None:
+            self.parent.curr_img = None
+            self.parent.curr_channel = 0
+            self.parent.threshold = []
+            self.parent.viewer.clearScene()            
+            self.parent.viewer.clear()
+        
+        print(len(self.parent.rois))
+        if self.parent.rois:
+            self.parent.rois = []
+            self.parent.scaled_regions = []
+            self.parent.roi_table.clear()
+
+        return super().closeEvent(event)
 
     def folderClicked(self):
         folder = str(QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory"))
@@ -317,6 +346,25 @@ class BatchDialog(QtWidgets.QMainWindow):
                 thresholds.append(', '.join('{:.2f}'.format(t) for t in thresh))
 
             self.batch_table.update(self.folder, channels, thresholds)
+            self.channels = channels
+            self.thresholds = thresholds
+
+    def restoreTable(self):
+        settings = QtCore.QSettings('Dan', 'slidecrop')
+        self.folder = settings.value('folder', type=str)
+        self.channels = settings.value('channels', type=list)
+
+        self.thresholds = settings.value('thresholds', type=list)
+        if self.channels and self.thresholds:
+            self.ui.folder_edit.setText(self.folder)
+            self.batch_table.update(self.folder, self.channels, self.thresholds)
+
+    def saveTable(self):
+        settings = QtCore.QSettings('Dan', 'slidecrop')
+        settings.setValue('folder', self.folder)
+        settings.setValue('channels', self.channels)
+        settings.setValue('thresholds', self.thresholds)
+
 
     def _runBatch(self, input_paths, output_dirs, seg_channels, thresholds):
         self.worker.initialise(input_paths, output_dirs, seg_channels, thresholds)

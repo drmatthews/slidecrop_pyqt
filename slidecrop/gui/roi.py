@@ -100,6 +100,10 @@ class ROITable(QtWidgets.QWidget):
                 rows.append(r)
         return rows
 
+    def clear(self):
+        print('clearing table')
+        self.initTable()
+
 
 class RubberBand(QtWidgets.QRubberBand):
     def __init__(self, parent):

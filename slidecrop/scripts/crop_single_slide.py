@@ -5,8 +5,9 @@ from ..ims.slide import SlideImage
 from ..processing.crop import CropSlide
 
 
-def crop_slide(*args, **kwargs):
-    CropSlide(*args, **kwargs)
+def crop_slide(filepath, outputdir, **kwargs):
+    with SlideImage(filepath) as slide:
+        CropSlide(slide, outputdir, **kwargs)
 
 
 if __name__=='__main__':
