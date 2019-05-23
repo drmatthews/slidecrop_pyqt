@@ -118,7 +118,7 @@ class BatchTable(QtWidgets.QWidget):
 
         # lauch a threshold worker to recalculate the
         # channel thresholds
-        self.thresh_worker.initialise(slide_path, method)
+        self.thresh_worker.initialise(slide_path, method=method)
         self.thresh_worker.start()
 
     def updateThresholdCell(self, result):

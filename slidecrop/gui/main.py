@@ -36,6 +36,7 @@ class SlideViewer(QtWidgets.QGraphicsView):
         self.viewport_geometry = (0, 20, 427, 561)
         self.setGeometry(*self.viewport_geometry)
         self._zoom = 0
+        self.max_zoom = 10
         self.factor = None
         self._empty = True
         self._scene = QtWidgets.QGraphicsScene()
@@ -89,7 +90,7 @@ class SlideViewer(QtWidgets.QGraphicsView):
         rect = QtCore.QRectF(self._slide.pixmap().rect())
         if not rect.isNull():
             self.setSceneRect(rect)
-            if self.hasSlide() and self._zoom == 0:
+            if self.hasSlide():
                 unity = self.transform().mapRect(QtCore.QRectF(0, 0, 1, 1))
                 self.scale(1 / unity.width(), 1 / unity.height())
                 viewrect = self.viewport().rect()
@@ -116,16 +117,28 @@ class SlideViewer(QtWidgets.QGraphicsView):
         if self.hasSlide():
             if event.angleDelta().y() > 0:              
                 factor = 1.25
-                self._zoom += 1
+                if self._zoom < self.max_zoom:
+                    self._zoom += 1
             else:
                 factor = 0.8
                 self._zoom -= 1
-            if self._zoom > 0:
+
+            if self._zoom > 0 and self._zoom < self.max_zoom:
                 self.scale(factor, factor)
             elif self._zoom == 0:
                 self.fitInView()
-            else:
+            elif self._zoom < 0 or self._zoom > self.max_zoom:
+                # print(self._zoom)
                 self._zoom = 0
+
+            # rect = QtCore.QRectF(self._slide.pixmap().rect())
+            # viewrect = self.viewport().rect()
+            # print('viewrect {}'.format(viewrect))
+            # scenerect = self.transform().mapRect(rect)
+            # print('scenerect {}'.format(scenerect))
+
+            
+
 
     def keyPressEvent(self, event):
         """
@@ -472,12 +485,12 @@ class Window(QtWidgets.QMainWindow):
         self.channels = self.slide.channels()
 
         # determine otsu threshold
-        self.thresh_worker.slide_path = self.slide_path
+        self.thresh_worker.initialise(self.slide_path)
         self.thresh_worker.start()
 
         # get the histogram for each channel from the slide
-        self.histogram_worker.slide_path = self.slide_path
-        self.histogram_worker.start()        
+        self.histogram_worker.initialise(self.slide_path)
+        self.histogram_worker.start()
 
         # get channel names and colors
         self.channel_names = slide.channel_names
@@ -501,8 +514,7 @@ class Window(QtWidgets.QMainWindow):
         self.ui.slide_tabWidget.show()
 
         self.ui.roi_list.setGeometry(368, 9, 253, 582)
-        # close the hdf file
-        self.slide.close()
+
 
     def onImportCancelled(self, msg):
         pass

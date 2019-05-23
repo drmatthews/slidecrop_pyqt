@@ -38,7 +38,7 @@ class ImageRegion:
         return self.segmentation_roi[key]
         
 
-class SegmentSlide:
+class Segment:
 
     def __init__(self, mode, scale_factor, channel=None,
                  thresh_method='auto', threshold=None):

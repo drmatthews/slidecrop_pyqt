@@ -19,7 +19,7 @@ from skimage.filters import (
 # from slidecrop.processing.otsu import threshold_otsu
 from ..ims.slide import SlideImage
 from ..processing.crop import CropSlide
-from ..processing.segmentation import SegmentSlide
+from ..processing.segmentation import Segment
 from ..ome.ometiff import OMETiffGenerator
 
 
@@ -139,6 +139,9 @@ class SlideImportWorker(BaseWorker):
         super().__init__()
         self.slide_path = slide_path
 
+    def initialise(self, slide_path):
+        self.slide_path = slide_path
+
     def run(self):
         """
         Called when the start() method is called on the instance
@@ -175,54 +178,30 @@ class BatchSlideParseWorker(BaseWorker):
         self.folder = folder
         self.method = method
 
-    def _auto_threshold(self, plane, method='otsu'):
-        if 'isodata' in method:
-            thresh = threshold_isodata(plane)        
-        elif 'mean' in method:
-            thresh = threshold_mean(plane)
-        elif 'otsu' in method:
-            thresh = threshold_otsu(plane)
-        elif 'triangle' in method:
-            thresh = threshold_triangle(plane)
-        elif 'yen' in method:
-            thresh = threshold_yen(plane)
-        else:
-            raise NotImplementedError('thresholding method not supported')
-        return thresh        
-
-    def _getThreshold(self, slide):
-        low = slide.low_resolution_image()
-        size_c = slide.size_c
-        thresh = []
-        for c in range(size_c):
-            plane = low[c, :, :]                    
-            thresh.append(self._auto_threshold(plane, self.method))       
-
-        return thresh
-
     def run(self):
         """
         Called when the start() method is called on the instance
 
         Emits tuple of channels (int) and thresholds (list)
         """
-        # try:
-        channels = []
-        thresholds = []
-        count = 0
-        for filename in os.listdir(self.folder):
-            if filename.endswith('.ims'):
-                slide_path = os.path.join(self.folder, filename)
-                slide = SlideImage(slide_path)
-                channels.append(slide.size_c)
-                thresholds.append(self._getThreshold(slide))
-                slide.close()
-                self.progress.emit(count)
-                time.sleep(0.2)
-                count += 1
-        self.parse_done.emit((channels, thresholds))
-        # except:
-        #     self.parse_done[str].emit("")
+        try:
+            channels = []
+            thresholds = []
+            count = 0
+            for filename in os.listdir(self.folder):
+                if filename.endswith('.ims'):
+                    slide_path = os.path.join(self.folder, filename)
+
+                    with SlideImage(slide_path) as slide:
+                        channels.append(slide.size_c)
+                        thresholds.append(_get_threshold(slide, self.method))
+
+                    self.progress.emit(count)
+                    time.sleep(0.2)
+                    count += 1
+            self.parse_done.emit((channels, thresholds))
+        except:
+            self.parse_done[str].emit("")
 
 
 class SegmentationWorker(BaseWorker):
@@ -258,19 +237,13 @@ class SegmentationWorker(BaseWorker):
 
         Emits the regions segmented
         """
-        # try:
-        with SlideImage(self.slide_path) as slide:
-            mode = slide.microscope_mode
-            lo = slide.low_resolution_image()
-            factor = slide.scale_factor
+        try:
+            with SlideImage(self.slide_path) as slide:
+                regions = _segment(slide, self.channel, self.threshold)
 
-        segmenter = SegmentSlide(
-            mode, factor, channel=self.channel,
-            thresh_method='manual', threshold=self.threshold
-        )
-        self.segmentation_finished.emit(segmenter.run(lo))
-        # except:
-        #     pass
+            self.segmentation_finished.emit(regions)
+        except:
+            pass
 
 
 class ThresholdWorker(BaseWorker):
@@ -291,24 +264,9 @@ class ThresholdWorker(BaseWorker):
         self.slide_path = slide_path
         self.method = method
 
-    def initialise(self, slide_path, method):
+    def initialise(self, slide_path, method='otsu'):
         self.slide_path = slide_path
         self.method = method
-
-    def _auto_threshold(self, plane, method='otsu'):
-        if 'isodata' in method:
-            thresh = threshold_isodata(plane)        
-        elif 'mean' in method:
-            thresh = threshold_mean(plane)
-        elif 'otsu' in method:
-            thresh = threshold_otsu(plane)
-        elif 'triangle' in method:
-            thresh = threshold_triangle(plane)
-        elif 'yen' in method:
-            thresh = threshold_yen(plane)
-        else:
-            raise NotImplementedError('thresholding method not supported')
-        return thresh
 
     def run(self):
         """
@@ -316,18 +274,13 @@ class ThresholdWorker(BaseWorker):
 
         Emits a list of Otsu determined threshold levels
         """
-        # try:
-        with SlideImage(self.slide_path) as slide:
-            low = slide.low_resolution_image()
-            size_c = slide.size_c
-            thresh = []
-            for c in range(size_c):
-                plane = low[c, :, :]                    
-                thresh.append(self._auto_threshold(plane, self.method))
+        try:
+            with SlideImage(self.slide_path) as slide:
+                thresh = _get_threshold(slide, self.method)
 
-        self.threshold_finished.emit(thresh)
-        # except:
-        #     pass
+            self.threshold_finished.emit(thresh)
+        except:
+            pass
 
 
 class HistogramWorker(BaseWorker):
@@ -347,18 +300,22 @@ class HistogramWorker(BaseWorker):
         super().__init__()
         self.slide_path = slide_path
 
+    def initialise(self, slide_path):
+        self.slide_path = slide_path
+
     def run(self):
         """
         Called when the start() method is called on the instance
 
         Emits list of image histograms as numpy arrays
         """
-        with SlideImage(self.slide_path) as slide:
-            y = []
-            for c in range(slide.size_c):
-                y.append(slide.get_histogram(c=c))
+        try:
+            with SlideImage(self.slide_path) as slide:
+                data = _get_histogram(slide)
 
-        self.histogram_finished.emit(y)
+            self.histogram_finished.emit(data)
+        except:
+            pass
 
 
 class OMEWorker(BaseWorker):
@@ -400,14 +357,9 @@ class OMEWorker(BaseWorker):
                     for rid, region in enumerate(self.regions):
 
                         filename = slide.basename + '_section_{}.ome.tif'.format(rid)
-                        ometiff = OMETiffGenerator(
-                            slide,
-                            filename,
-                            self.outputdir,
-                            self.channels, 0, 0
-                        )
+                        _crop_region(slide, filename, self.outputdir, region)
+
                         self.progress.emit(rid)
-                        ometiff.run(region)
             except:
                 pass
 
@@ -446,15 +398,8 @@ class BatchSegmentationWorker(BaseWorker):
                 seg_channel = self.channels[sid]
                 threshold = self.thresholds[sid]
                 with SlideImage(slide_path) as slide:
-                    mode = slide.microscope_mode
-                    lo = slide.low_resolution_image()
-                    factor = slide.scale_factor
+                    batch_regions.append(_segment(slide, seg_channel, threshold))
 
-                    segmenter = SegmentSlide(
-                        mode, factor, channel=seg_channel,
-                        thresh_method='manual', threshold=threshold
-                    )
-                    batch_regions.append(segmenter.run(lo))
             self.segmentation_finished.emit(batch_regions)
         except:
             pass
@@ -508,30 +453,78 @@ class BatchCropWorker(BaseWorker):
                 threshold = self.thresholds[sid]
 
                 with SlideImage(slide_path) as slide:
-                    mode = slide.microscope_mode
-                    lo = slide.low_resolution_image()
-                    factor = slide.scale_factor
-
-                    segmenter = SegmentSlide(
-                        mode, factor, channel=seg_channel,
-                        thresh_method='manual', threshold=threshold
-                    )
-                    regions = segmenter.run(lo)
+                    # segment
+                    regions = _segment(slide, seg_channel, threshold)
                     self.segmentation_finished.emit((sid, len(regions)))
 
                     for rid, region in enumerate(regions):
                         filename = slide.basename + '_section_{}.ome.tif'.format(rid)
                         print('writing filename {}'.format(filename))
-                        channels = [c for c in range(slide.size_c)]
-                        ometiff = OMETiffGenerator(
-                            slide,
-                            filename,
-                            self.output_dirs[sid],
-                            channels, 0, 0
-                        )
+
+                        # crop and make ome-tiff
+                        _crop_region(slide, filename, self.output_dirs[sid], region)
                         self.batch_progress.emit((sid, rid))
-                        ometiff.run(region)
                         count += 1
             self.stopped = True
         toc = time.time()
         print(toc - tic)
+
+
+#####
+# helpers
+def _get_histogram(slide):
+    y = []
+    for c in range(slide.size_c):
+        y.append(slide.get_histogram(c=c))
+    return y
+
+
+def _auto_threshold(plane, method):
+    if 'isodata' in method:
+        thresh = threshold_isodata(plane)        
+    elif 'mean' in method:
+        thresh = threshold_mean(plane)
+    elif 'otsu' in method:
+        thresh = threshold_otsu(plane)
+    elif 'triangle' in method:
+        thresh = threshold_triangle(plane)
+    elif 'yen' in method:
+        thresh = threshold_yen(plane)
+    else:
+        raise NotImplementedError('thresholding method not supported')
+    return thresh       
+
+
+def _get_threshold(slide, method):
+    low = slide.low_resolution_image()
+    size_c = slide.size_c
+    thresh = []
+    for c in range(size_c):
+        plane = low[c, :, :]  
+        thresh.append(_auto_threshold(plane, method))       
+
+    return thresh
+
+
+def _segment(slide, channel, threshold):
+    mode = slide.microscope_mode
+    lo = slide.low_resolution_image()
+    factor = slide.scale_factor
+
+    segmenter = Segment(
+        mode, factor, channel=channel,
+        thresh_method='manual', threshold=threshold
+    )
+    regions = segmenter.run(lo)
+    return regions
+
+
+def _crop_region(slide, filename, outputdir, region):
+    channels = [c for c in range(slide.size_c)]
+    ometiff = OMETiffGenerator(
+        slide,
+        filename,
+        outputdir,
+        channels, 0, 0
+    )
+    ometiff.run(region)

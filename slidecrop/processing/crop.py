@@ -3,7 +3,7 @@ import time
 
 from ..ims.slide import SlideImage
 from ..ome.ometiff import OMETiffGenerator
-from .segmentation import SegmentSlide
+from .segmentation import Segment
 
 
 class CropSlide:
@@ -50,7 +50,7 @@ class CropSlide:
     def _segment(self):
         image = self.slide.low_resolution_image()
         try:
-            segmenter = SegmentSlide(
+            segmenter = Segment(
                 self.mode, self.scale_factor, channel=self.seg_channel,
                 thresh_method=self.threshold_method, threshold=self.threshold
             )
