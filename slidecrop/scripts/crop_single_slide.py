@@ -11,6 +11,7 @@ def crop_slide(filepath, outputdir, **kwargs):
 
 
 if __name__=='__main__':
+    # note to self using the option parser rather than arg parser would be better here
     parser = argparse.ArgumentParser()
     parser.add_argument('--filepath', help='full path to slide to be cropped')
     parser.add_argument('--outputdir', help='optionally specify an output directory')

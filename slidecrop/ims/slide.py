@@ -1,4 +1,5 @@
 import os
+import math
 
 import h5py
 import numpy as np
@@ -211,6 +212,41 @@ class SlideImage:
             return low_res
         else:
             raise IOError('Resolution level not found - maximum level is {}'.format(self.num_levels - 1))
+
+    def get_level_downsample(self, level):
+        size0 = self.level_dimensions(0)
+        # print('size0 {}'.format(size0))
+        levelSize = self.level_dimensions(level)
+        # print('level size {}'.format(levelSize))
+        down_sample = tuple(
+            map(lambda x, y: math.floor(float(x) / float(y)),
+            size0, levelSize)
+        )
+        return max(down_sample)
+
+    def get_best_level_for_downsample(self, down_sample):
+        #return the best level for the required down sample
+        level_count = self.resolution_levels()
+        if down_sample < self.get_level_downsample(0):
+            return 0
+
+        for i in range(level_count):
+            if down_sample < self.get_level_downsample(i):
+                print(i - 1)
+                return i - 1
+
+        if down_sample >= self.get_level_downsample(level_count - 1):
+            return level_count - 1
+
+    def level_downsamples(self):
+        """A list of downsampling factors for each level of the image.
+
+        level_downsample[n] contains the downsample factor of level n."""
+        level_count = self.resolution_levels()
+        return tuple(
+            self.get_level_downsample(i)
+            for i in range(level_count)
+        )
 
     @property
     def channel_names(self):
