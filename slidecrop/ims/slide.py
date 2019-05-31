@@ -3,10 +3,6 @@ import math
 
 import h5py
 import numpy as np
-
-
-class SlideRegion:
-    def __init__(self, ):
         
 
 class SlideImage:
@@ -110,7 +106,29 @@ class SlideImage:
         else:
             return None
 
-    def get_pixels(self, r, c, t=0, region=None):
+    # This is currently accessed in two places -
+    # 1. In OMETiffGenerator - array of pixels is required
+    #    for writing data to tiff
+    # 2. In DeepZoomGenerator which is used to generate tiles
+    #    for display in the UI. This actually requires either
+    #    the individual channel as RGB or an RGB representation
+    #    of all the channels - i.e. a merge
+    def get_region_as_rgba(self, r, c, t=0, region=None):
+        if r >= 0 and r <= self._size_r - 1:
+            if region is None:
+                l_size = self.level_dimensions(r)
+                region = [0, 0, l_size[-2], l_size[-1]]
+
+            pix = self.read_region(region, r, c)
+            alpha_layer = (np.ones_like(pix) * 255)
+            return np.concatenate(3 * (pix,) + (alpha_layer,), axis=-1)            
+        else:
+            raise IOError(
+                'resolution level specified does not'
+                'exist in the slide image'
+            )
+        
+    def read_region(self, region, r, c, t=0):
         """
         Get pixel data from the *.ims image
         Note that the data is stored in the HDF5 image
@@ -133,22 +151,30 @@ class SlideImage:
         )
         try:
             data = self.slide[impath]['Data']
-            plane_size = self.slide_dimensions[r]
-            if region is None:
-                region = np.zeros((4), dtype=np.uint16)
-                region[0] = 0
-                region[1] = 0
-                region[2] = plane_size[0]
-                region[3] = plane_size[1]
-
             row_min = region[1]
             col_min = region[0]
             row_max = region[1] + region[3]
             col_max = region[0] + region[2]
-
             return data[0, row_min:row_max, col_min: col_max]
         except:
             return None
+
+    def read_multichannel_region(self, r, t=0, region=None):
+        if r >= 0 and r <= self._size_r - 1:
+            if region is None:
+                l_size = self.level_dimensions(r)
+                region = [0, 0, l_size[-2], l_size[-1]]
+
+            pix = np.zeros((self.size_c, region[-1], region[-2]))
+            for c in range(self.size_c):
+                pix[c, :, :] = self.read_region(region, r, c)
+            
+            return pix
+        else:
+            raise IOError(
+                'resolution level specified does not'
+                'exist in the slide image'
+            )
 
     def low_resolution_image(self, r=None):
         """
@@ -164,14 +190,15 @@ class SlideImage:
             r = self.segmentation_level
 
         if r <= self._size_r - 1:
-            low_res_size = self.level_dimensions(r)
-            low_res = np.zeros((self._size_c, low_res_size[-1], low_res_size[-2]))
-            for c in range(self._size_c):
-                low_res[c, :, :] = self.get_pixels(r, c)
-
+            l_size = self.level_dimensions(r)
+            region = [0, 0, l_size[-2], l_size[-1]]
+            low_res = self.read_multichannel_region(r, region=region)
             return low_res
         else:
-            raise IOError('Resolution level not found - maximum level is {}'.format(self._size_r - 1))
+            raise IOError(
+                ('Resolution level not found - maximum level is {}'.
+                format(self._size_r - 1))
+            )
 
     def get_level_downsample(self, level):
         size0 = self.level_dimensions(0)

@@ -104,7 +104,7 @@ class OMETiffGenerator:
         :returns pixels being written as numpy array
         """
         roi = [x + self.roi[0], y + self.roi[1], w, h]
-        return self.slide.get_pixels(
+        return self.slide.read_region(
             self.crop_level, channel, region=roi
         )
 
