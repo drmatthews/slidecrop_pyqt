@@ -482,7 +482,7 @@ class Window(QtWidgets.QMainWindow):
         self.microscope_mode = self.slide.microscope_mode
 
         # get the channels in the slide
-        self.channels = self.slide.channels()
+        self.channels = self.slide.size_c
 
         # determine otsu threshold
         self.thresh_worker.initialise(self.slide_path)

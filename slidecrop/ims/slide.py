@@ -29,13 +29,13 @@ class SlideImage:
         """
         if filepath.endswith('ims') and os.path.exists(filepath):
             self.filepath = filepath
-            filename = os.path.basename(filepath)
-            self.basename = os.path.splitext(filename)[0]
+            self.filename = os.path.basename(filepath)
+            self.basename = os.path.splitext(self.filename)[0]
             self.slide = h5py.File(filepath,'r')
-            self.num_levels = self.resolution_levels()
-            self.size_c = self.channels()
-            self.size_t = self.time_points()            
-            self._segmentation_level = self.num_levels - 1
+            self._size_r = self.size_r
+            self._size_c = self.size_c
+            self._size_t = self.size_t
+            self._segmentation_level = self._size_r - 1
             self._crop_level = 0
             self._scale_factor = self.scale_factor
             self._microscope_mode = ''
@@ -48,23 +48,6 @@ class SlideImage:
 
     def __exit__(self, type, value, traceback):
         self.slide.close()
-
-    def _bytes_to_int(self, byte_list):
-        """
-        Integer values are stored in HDF metadata as byte strings
-
-        :param byte_list: list of byte strings
-        :returns list of ints
-        """
-        return int(b''.join(byte_list).decode('utf-8'))
-
-    def _bytes_to_str(self, byte_list):
-        """
-        String values are stored in HDF metadata as byte strings
-        :param byte_list: list of byte strings
-        :returns list of str
-        """
-        return str(b''.join(byte_list).decode('utf-8'))
 
     def open(self):
         """
@@ -96,40 +79,13 @@ class SlideImage:
         if r is None:
             r = self.segmentation_level
 
-        if r <= self.num_levels - 1:
+        if r <= self._size_r - 1:
             histpath = (
                 '/DataSet/ResolutionLevel {0}/TimePoint {1}/Channel {2}/'.
                 format(r, t, c)
             )
             hist = self.slide[histpath]['Histogram'][:]
             return hist
-
-    def resolution_levels(self):
-        """
-        Number of slide resolution levels
-
-        :returns number of resolution levels
-        """
-        levels = len(self.slide['/DataSet'])
-        return levels if levels is not None else 0
-
-    def channels(self):
-        """
-        Number of slide channels
-
-        :returns number of channels
-        """        
-        channels = len(self.slide['/DataSet/ResolutionLevel 0/TimePoint 0/'])
-        return channels if channels is not None else 0
-
-    def time_points(self):
-        """
-        Number of slide time points (usually 1)
-
-        :returns number of time points
-        """        
-        time_points = len(self.slide['/DataSet/ResolutionLevel 0/'])
-        return time_points if time_points is not None else 0
 
     def level_dimensions(self, r):
         """
@@ -138,7 +94,7 @@ class SlideImage:
         :type r: int
         :returns tuple of xy size
         """
-        if r <= self.num_levels - 1:
+        if r <= self._size_r - 1:
             path = '/DataSet/ResolutionLevel {}/TimePoint 0/'.format(r)
             folder = 'Channel 0'
             size_x_bytes = self.slide[path + folder].attrs.get('ImageSizeX')
@@ -203,15 +159,15 @@ class SlideImage:
         if r is None:
             r = self.segmentation_level
 
-        if r <= self.num_levels - 1:
+        if r <= self._size_r - 1:
             low_res_size = self.level_dimensions(r)
-            low_res = np.zeros((self.size_c, low_res_size[-1], low_res_size[-2]))
-            for c in range(self.size_c):
+            low_res = np.zeros((self._size_c, low_res_size[-1], low_res_size[-2]))
+            for c in range(self._size_c):
                 low_res[c, :, :] = self.get_pixels(r, c)
 
             return low_res
         else:
-            raise IOError('Resolution level not found - maximum level is {}'.format(self.num_levels - 1))
+            raise IOError('Resolution level not found - maximum level is {}'.format(self._size_r - 1))
 
     def get_level_downsample(self, level):
         size0 = self.level_dimensions(0)
@@ -226,7 +182,7 @@ class SlideImage:
 
     def get_best_level_for_downsample(self, down_sample):
         #return the best level for the required down sample
-        level_count = self.resolution_levels()
+        level_count = self._size_r
         if down_sample < self.get_level_downsample(0):
             return 0
 
@@ -242,11 +198,58 @@ class SlideImage:
         """A list of downsampling factors for each level of the image.
 
         level_downsample[n] contains the downsample factor of level n."""
-        level_count = self.resolution_levels()
+        level_count = self._size_r
         return tuple(
             self.get_level_downsample(i)
             for i in range(level_count)
         )
+
+    def _bytes_to_int(self, byte_list):
+        """
+        Integer values are stored in HDF metadata as byte strings
+
+        :param byte_list: list of byte strings
+        :returns list of ints
+        """
+        return int(b''.join(byte_list).decode('utf-8'))
+
+    def _bytes_to_str(self, byte_list):
+        """
+        String values are stored in HDF metadata as byte strings
+        :param byte_list: list of byte strings
+        :returns list of str
+        """
+        return str(b''.join(byte_list).decode('utf-8'))
+
+    @property
+    def size_r(self):
+        """
+        Number of slide resolution levels
+
+        :returns number of resolution levels
+        """
+        levels = len(self.slide['/DataSet'])
+        return levels if levels is not None else 0
+
+    @property
+    def size_c(self):
+        """
+        Number of slide channels
+
+        :returns number of channels
+        """        
+        channels = len(self.slide['/DataSet/ResolutionLevel 0/TimePoint 0/'])
+        return channels if channels is not None else 0
+
+    @property
+    def size_t(self):
+        """
+        Number of slide time points (usually 1)
+
+        :returns number of time points
+        """        
+        time_points = len(self.slide['/DataSet/ResolutionLevel 0/'])
+        return time_points if time_points is not None else 0
 
     @property
     def channel_names(self):
@@ -254,7 +257,7 @@ class SlideImage:
         :returns list of channel names
         """
         names = []
-        for channel in range(self.size_c):
+        for channel in range(self._size_c):
             c = 'Channel {}'.format(channel)
             channel_group = '/DataSetInfo/{}'.format(c)
             name = self.slide[channel_group].attrs.get('Name')
@@ -267,7 +270,7 @@ class SlideImage:
         :returns list of channel colors
         """
         colors = []
-        for channel in range(self.size_c):
+        for channel in range(self._size_c):
             c = 'Channel {}'.format(channel)
             channel_group = '/DataSetInfo/{}'.format(c)
             color = self.slide[channel_group].attrs.get('Color')
@@ -282,9 +285,9 @@ class SlideImage:
         each resolution level
         """
         size_array = None
-        if self.num_levels > 0:
+        if self._size_r > 0:
             size_array = []
-            for r in range(self.num_levels):
+            for r in range(self._size_r):
                 size_array.append(self.level_dimensions(r))
             
         return size_array
@@ -319,7 +322,7 @@ class SlideImage:
         """
         Sets the resolution level to be used for segmentation
         """
-        if value <= self.num_levels - 1:
+        if value <= self._size_r - 1:
             self._segmentation_level = value
             self._scale_factor = self.scale_factor
         else:
@@ -337,7 +340,7 @@ class SlideImage:
         """
         Sets the resolution level to be used for cropping
         """
-        if value <= self.num_levels - 1:
+        if value <= self._size_r - 1:
             self._crop_level = value
         else:
             raise ValueError('Resolution level does not exist')
@@ -377,7 +380,7 @@ class SlideImage:
         # as key, value pairs
         metadata = {}
         # DataSetInfo/Channel
-        for channel in range(self.size_c):
+        for channel in range(self._size_c):
             c = 'Channel {}'.format(channel)
             channel_group = '/DataSetInfo/{}'.format(c)
             metadata[c] = self._group_attributes(channel_group)
