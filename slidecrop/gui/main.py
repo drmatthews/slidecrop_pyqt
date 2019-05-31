@@ -1,6 +1,8 @@
 import os
+import math
 
 from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5 import QtWebEngine
 import numpy as np
 
 from . import main_ui as UI
@@ -18,6 +20,7 @@ from .threads import (
 from .roi import ROITable
 from .roi import ROIItem
 from ..ims.slide import SlideImage
+from ..ims.deepzoom import DeepZoomGenerator
 
 
 class SlideViewer(QtWidgets.QGraphicsView):
@@ -28,20 +31,29 @@ class SlideViewer(QtWidgets.QGraphicsView):
     """
     slideClicked = QtCore.pyqtSignal(QtCore.QPoint)
 
-    def __init__(self, parent=None, widget=None):
+    def __init__(self, parent=None, widget=None, slide=None):
         super(SlideViewer, self).__init__(widget)
         self.parent = parent
         self.tabs = widget
+        self._slide = slide
         self.tabs.setTabText(0, 'All')        
         self.viewport_geometry = (0, 20, 427, 561)
         self.setGeometry(*self.viewport_geometry)
         self._zoom = 0
+        self._zl = 11
         self.max_zoom = 10
+        if self._slide:
+            self.max_zoom = self._slide.zoom_levels
+        self.curr_img = None
+        self.curr_level = 0
         self.factor = None
         self._empty = True
+        self.initViewer()
+
+    def initViewer(self):
         self._scene = QtWidgets.QGraphicsScene()
-        self._slide = QtWidgets.QGraphicsPixmapItem()
-        self._scene.addItem(self._slide)
+        self._image = QtWidgets.QGraphicsPixmapItem()
+        self._scene.addItem(self._image)
         self.setScene(self._scene)
         self._scene.newItem = None
         self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
@@ -50,7 +62,7 @@ class SlideViewer(QtWidgets.QGraphicsView):
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.setBackgroundBrush(QtGui.QBrush(QtGui.QColor(30, 30, 30)))
         self.setFrameShape(QtWidgets.QFrame.NoFrame)
-
+        self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
         sizePolicy = QtGui.QSizePolicy(
             QtGui.QSizePolicy.MinimumExpanding,
             QtGui.QSizePolicy.MinimumExpanding
@@ -61,67 +73,18 @@ class SlideViewer(QtWidgets.QGraphicsView):
         self.setSizePolicy(sizePolicy)
         self.setMinimumSize(QtCore.QSize(431, 541))
 
-    def clear(self):
-        self._empty = True
-        self._zoom = 0
-        self.factor = None
-        self._scene.clear()
-        self._clearTabs()
-        self._slide = QtWidgets.QGraphicsPixmapItem()
-        self._scene.addItem(self._slide)        
-
-    def clearScene(self):
-        """
-        Remove all ROIItems from the scene
-        """
-        for item in self._scene.items():
-            if not isinstance(item, QtWidgets.QGraphicsPixmapItem):
-                self._scene.removeItem(item)
-
-    def deselectROIs(self):
-        for item in self._scene.items():
-            if not isinstance(item, QtWidgets.QGraphicsPixmapItem):
-                item.setSelected(False)      
-
-    def hasSlide(self):
-        return not self._empty
-
-    def fitInView(self, scale=True):
-        rect = QtCore.QRectF(self._slide.pixmap().rect())
-        if not rect.isNull():
-            self.setSceneRect(rect)
-            if self.hasSlide():
-                unity = self.transform().mapRect(QtCore.QRectF(0, 0, 1, 1))
-                self.scale(1 / unity.width(), 1 / unity.height())
-                viewrect = self.viewport().rect()
-                scenerect = self.transform().mapRect(rect)
-                factor = min(viewrect.width() / scenerect.width(),
-                             viewrect.height() / scenerect.height())
-                self.scale(factor, factor)
-            # self._zoom = 0
-
-    def setSlide(self, qimg=None):
-        pixmap = QtGui.QPixmap.fromImage(qimg)
-        if not pixmap.isNull():
-            self._empty = False
-            self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
-            self._slide.setPixmap(pixmap)
-        else:
-            self._empty = True
-            self.setDragMode(QtWidgets.QGraphicsView.NoDrag)
-            self._slide.setPixmap(QtGui.QPixmap())
-        self.fitInView()
-
     def wheelEvent(self, event):
     
-        if self.hasSlide():
+        if self.hasImage():
             if event.angleDelta().y() > 0:              
                 factor = 1.25
                 if self._zoom < self.max_zoom:
                     self._zoom += 1
+                    self._zl += 1
             else:
                 factor = 0.8
                 self._zoom -= 1
+                self._zl -= 1
 
             if self._zoom > 0 and self._zoom < self.max_zoom:
                 self.scale(factor, factor)
@@ -131,14 +94,34 @@ class SlideViewer(QtWidgets.QGraphicsView):
                 # print(self._zoom)
                 self._zoom = 0
 
-            # rect = QtCore.QRectF(self._slide.pixmap().rect())
-            # viewrect = self.viewport().rect()
-            # print('viewrect {}'.format(viewrect))
-            # scenerect = self.transform().mapRect(rect)
-            # print('scenerect {}'.format(scenerect))
+            a = self.mapToScene(
+                QtCore.QPoint(0, 0)
+            )                    
+            b = self.mapToScene(
+                QtCore.QPoint(
+                    self.viewport().width(),
+                    self.viewport().height()
+                )
+            )
+            x = math.floor(a.x())
+            y = math.floor(a.y())
+            w = math.floor(b.x())
+            h = math.floor(b.y())
+            if x < 0:
+                x = 0
+            if y < 0:
+                y = 0
 
-            
-
+            slide_level = self._slide.slide_level_for_zoom(self._zl)
+            print(self._zoom)
+            print(self._zl)
+            print(slide_level)
+            if slide_level != self.curr_level:
+                factor = self._slide.get_level_downsample(slide_level)
+                visible = [x, y, w, h]
+                # visible = [v * 2 for v in visible]
+                print(visible)
+                self.updateImage(self._channel, self._threshold, region=visible)
 
     def keyPressEvent(self, event):
         """
@@ -198,8 +181,125 @@ class SlideViewer(QtWidgets.QGraphicsView):
     def toggleDragMode(self):
         if self.dragMode() == QtWidgets.QGraphicsView.ScrollHandDrag:
             self.setDragMode(QtWidgets.QGraphicsView.NoDrag)
-        elif not self._slide.pixmap().isNull():
+        elif not self._image.pixmap().isNull():
             self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
+
+    @property
+    def slide(self):
+        return self._slide
+
+    @slide.setter
+    def slide(self, slide):
+        self._slide = slide
+        self._dz = DeepZoomGenerator(slide)
+        self.max_zoom = self._dz.level_count
+
+    def setMaxZoom(self, max_zoom):
+        self.max_zoom = max_zoom
+
+    def clear(self):
+        self._empty = True
+        self._zoom = 0
+        self.factor = None
+        self._scene.clear()
+        self._clearTabs()
+        self._image = QtWidgets.QGraphicsPixmapItem()
+        self._scene.addItem(self._image)        
+
+    def clearScene(self):
+        """
+        Remove all ROIItems from the scene
+        """
+        for item in self._scene.items():
+            if not isinstance(item, QtWidgets.QGraphicsPixmapItem):
+                self._scene.removeItem(item)
+
+    def deselectROIs(self):
+        for item in self._scene.items():
+            if not isinstance(item, QtWidgets.QGraphicsPixmapItem):
+                item.setSelected(False)      
+
+    def hasImage(self):
+        return not self._empty
+
+    def fitInView(self, scale=True):
+        rect = QtCore.QRectF(self._image.pixmap().rect())
+        if not rect.isNull():
+            self.setSceneRect(rect)
+            if self.hasImage():
+                unity = self.transform().mapRect(QtCore.QRectF(0, 0, 1, 1))
+                self.scale(1 / unity.width(), 1 / unity.height())
+                viewrect = self.viewport().rect()
+                scenerect = self.transform().mapRect(rect)
+                factor = min(viewrect.width() / scenerect.width(),
+                             viewrect.height() / scenerect.height())
+                self.scale(factor, factor)
+            # self._zoom = 0
+
+    def setImage(self, qimg=None):
+        pixmap = QtGui.QPixmap.fromImage(qimg)
+        print('setImage called')
+        self._empty = False
+        self._image.setPixmap(pixmap)
+        self.fitInView()
+
+    def updateImage(self, channel, threshold, region=None, show_mask=True):
+        """
+        Updates the display of the low resolution slide image
+        to show the result of any thresholding - probably
+        needs refactoring (doing too many things).
+        """
+        print('update image')
+
+        self._channel = channel
+        self._threshold = threshold
+        zlevel = self._zl
+        slevel = self._slide.slide_level_for_zoom(zlevel)
+        img = self._getPixelsFromSlide(slevel, region=region)
+
+        _, h, w = img.shape
+        img_RGB = np.zeros((h, w, 4), dtype=np.uint8)
+        if isinstance(channel, int):
+            color = self._slide.channel_colors[channel]
+            img_RGB[:, :, 0] = img[channel, :, :] * color[0]
+            img_RGB[:, :, 1] = img[channel, :, :] * color[1]
+            img_RGB[:, :, 2] = img[channel, :, :] * color[2]
+            img_RGB[:, :, 3] = 255
+            if threshold and show_mask:
+                thresh = threshold[channel]
+                if 'bright' in self._slide.microscope_mode:
+                    mask = img_RGB[:, :, channel] < thresh
+                elif 'fluoro' in self._slide.microscope_mode:
+                    mask = img_RGB[:, :, channel] > thresh
+                img_RGB[mask, 0] = 255
+                img_RGB[mask, 1] = 255
+        else:
+            img_RGB[:, :, 0] = img[0, :, :]
+            img_RGB[:, :, 1] = img[1, :, :]
+            img_RGB[:, :, 2] = img[2, :, :]
+            img_RGB[:, :, 3] = 255
+            if threshold and show_mask:
+                thresh = threshold[0]
+                print("rgb threshold {}".format(thresh))
+                if 'bright' in self._slide.microscope_mode:
+                    mask = img_RGB[:, :, 0] < thresh
+                elif 'fluoro' in self._slide.microscope_mode:
+                    mask = img_RGB[:, :, 0] > thresh
+                img_RGB[mask, 0] = 255
+
+        qimg = QtGui.QImage(img_RGB.data, w, h, QtGui.QImage.Format_RGBA8888)
+
+        self.setImage(qimg)
+
+    def updateDisplay(self, channel, threshold, region=None, show_mask=True):
+        self._channel = channel
+        self._threshold = threshold
+        zlevel = self._zl
+        slevel = self._slide.slide_level_for_zoom(zlevel)
+        cols, rows = self._dz.level_tiles[zlevel]
+        for row in range(rows):
+            for col in range(cols):
+                tile = self._dz.get_tile(slevel, (row, col))
 
     def addROI(self, roi):
         """
@@ -228,6 +328,21 @@ class SlideViewer(QtWidgets.QGraphicsView):
             tab = QtWidgets.QWidget()
             self.tabs.addTab(tab, channel)
 
+    def _getPixelsFromSlide(self, level, region=None):
+        # only access the slide if really necessary -
+        # if the zoom requires a change in resolution
+        # level
+        if level != self.curr_level:
+            # region is hardwired for testing
+            # region = [0, 0, 729, 1156]
+            print(region)
+            img = self._slide.read_multichannel_region(level, region=region)
+        else:
+            img = self.curr_img
+        self.curr_img = img
+        self.curr_level = level
+        return img
+
     def _clearTabs(self):
         self.tabs.clear()
         self.tabs.insertTab(0, QtWidgets.QWidget(), 'All')        
@@ -251,6 +366,7 @@ class Window(QtWidgets.QMainWindow):
 
         # parameters
         self.slide_path = None
+        self.slide = None
         self.basepath = ""
         self.curr_channel = None
         self.thresh_channel = 0
@@ -328,6 +444,9 @@ class Window(QtWidgets.QMainWindow):
         event.ignore()
 
         if result == QtWidgets.QMessageBox.Yes:
+            if self.slide:
+                self.slide.close()
+                self.viewer._slide.close()
             event.accept()
 
     # actions
@@ -386,7 +505,7 @@ class Window(QtWidgets.QMainWindow):
             if not self.thresh_dialog.isVisible():
                 self.thresh_dialog.show()
 
-            self._updateDisplayImage(self.curr_channel)
+            self.viewer.updateImage(self.curr_channel, self.threshold)
 
             # start the segmentation thread
             self.segmentation_worker = SegmentationWorker(
@@ -477,12 +596,16 @@ class Window(QtWidgets.QMainWindow):
         self.basepath = os.path.dirname(self.slide_path)
         self.basename = os.path.splitext(self.slide_path)[0]
         self.slide = slide
+        self.viewer.slide = slide
+
+        # set max zoom for viewer
+        self.viewer.setMaxZoom(slide.zoom_levels)
 
         # get the microscope mode
         self.microscope_mode = self.slide.microscope_mode
 
         # get the channels in the slide
-        self.channels = self.slide.size_c
+        self.channels = self.slide.channels()
 
         # determine otsu threshold
         self.thresh_worker.initialise(self.slide_path)
@@ -509,7 +632,7 @@ class Window(QtWidgets.QMainWindow):
         self.curr_img = self.slide.low_resolution_image()
 
         # update the display
-        self._updateDisplayImage(self.curr_channel, show_mask=False)
+        self.viewer.updateImage(self.curr_channel, self.threshold, show_mask=False)
         self.viewer.show()
         self.ui.slide_tabWidget.show()
 
@@ -540,7 +663,7 @@ class Window(QtWidgets.QMainWindow):
                 thresh_line = self.thresh_dialog.thresh_line
                 thresh_line.sigPositionChangeFinished.connect(self._lineMoved)                
 
-            self._updateDisplayImage(self.curr_channel, show_mask=show_mask)
+            self.viewer.updateImage(self.curr_channel, self.threshold, show_mask=show_mask)
 
     def onThresholdFinished(self, result):
         if result:
@@ -555,7 +678,7 @@ class Window(QtWidgets.QMainWindow):
         if result:
             rois = []
             for r in result:
-                roi = ROIItem(self.parent, QtCore.QRectF(*r.roi))
+                roi = ROIItem(self, QtCore.QRectF(*r.roi))
                 rois.append(roi)
                 self.viewer.addROI(roi)
 
@@ -575,53 +698,7 @@ class Window(QtWidgets.QMainWindow):
         if self.progress_dialog.isVisible():
             self.progress_dialog.close()
 
-    # helpers
-    def _updateDisplayImage(self, channel, show_mask=True):
-        """
-        Updates the display of the low resolution slide image
-        to show the result of any thresholding - probably
-        needs refactoring (doing too many things).
-        """
-        # image is being split for RGB for testing only
-        # finally only 'All' tab will be displayed
-        print("curr_channel {}".format(self.curr_channel))
-        print("threshold {}".format(self.threshold))
-
-        img = self.curr_img
-        _, h, w = img.shape
-        img_RGB = np.zeros((h, w, 4), dtype=np.uint8)
-        if isinstance(channel, int):
-            color = self.channel_colors[channel]
-            img_RGB[:, :, 0] = img[channel, :, :] * color[0]
-            img_RGB[:, :, 1] = img[channel, :, :] * color[1]
-            img_RGB[:, :, 2] = img[channel, :, :] * color[2]
-            img_RGB[:, :, 3] = 255
-            if self.threshold and show_mask:
-                threshold = self.threshold[channel]
-                if 'bright' in self.microscope_mode:
-                    mask = img_RGB[:, :, channel] < threshold
-                elif 'fluoro' in self.microscope_mode:
-                    mask = img_RGB[:, :, channel] > threshold
-                img_RGB[mask, 0] = 255
-                img_RGB[mask, 1] = 255
-        else:
-            img_RGB[:, :, 0] = img[0, :, :]
-            img_RGB[:, :, 1] = img[1, :, :]
-            img_RGB[:, :, 2] = img[2, :, :]
-            img_RGB[:, :, 3] = 255
-            if self.threshold and show_mask:
-                threshold = self.threshold[0]
-                print("rgb threshold {}".format(threshold))
-                if 'bright' in self.microscope_mode:
-                    mask = img_RGB[:, :, 0] < threshold
-                elif 'fluoro' in self.microscope_mode:
-                    mask = img_RGB[:, :, 0] > threshold
-                img_RGB[mask, 0] = 255
-
-        qimg = QtGui.QImage(img_RGB.data, w, h, QtGui.QImage.Format_RGBA8888)
-
-        self.viewer.setSlide(qimg)     
-
+    # helpers 
     def _lineMoved(self, line):
         """
         Responds to the threshold line being moved
@@ -642,7 +719,7 @@ class Window(QtWidgets.QMainWindow):
             print('line at {}'.format(line.value()))
             self.batch_dialog.batch_table.updateThresholdCell(self.threshold)
 
-        self._updateDisplayImage(self.curr_channel)
+        self.viewer.updateImage(self.curr_channel, self.threshold)
 
         # start the segmentation thread
         self.segmentation_worker = SegmentationWorker(
@@ -661,4 +738,3 @@ if __name__ == '__main__':
     win = Window()
     win.show()
     sys.exit( app.exec_() )
-
