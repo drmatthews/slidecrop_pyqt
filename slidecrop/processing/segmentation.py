@@ -19,7 +19,7 @@ from skimage.filters import (
 )
 
 
-class ImageRegion:
+class RectRegion:
 
     def __init__(self, x0, y0, w, h, scale_factor):
         self.roi = [x0, y0, w, h]
@@ -127,7 +127,7 @@ class Segment:
         scaled_regions = []
         for region in regions:
             scaled_regions.append(
-                ImageRegion(*region, scale_factor)
+                RectRegion(*region, scale_factor)
             )
 
         return scaled_regions

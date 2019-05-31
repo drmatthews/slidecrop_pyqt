@@ -5,6 +5,10 @@ import h5py
 import numpy as np
 
 
+class SlideRegion:
+    def __init__(self, ):
+        
+
 class SlideImage:
     """
     Interface to slide scanner image stored in 
@@ -18,7 +22,7 @@ class SlideImage:
        # process
        slide.close()
     2. with SlideImage(path) as slide:
-           # process
+        # process
 
     """
     def __init__(self, filepath):
