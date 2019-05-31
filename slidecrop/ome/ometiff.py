@@ -99,13 +99,13 @@ class OMETiffGenerator:
     # this feels like it's in the wrong place
     # and crop level should be accessed elsewhere
     # TODO: refactor
-    def _get_slide_data(self, channel, x, y, w, h):
+    def _get_pixels(self, channel, x, y, w, h):
         """
         :returns pixels being written as numpy array
         """
         roi = [x + self.roi[0], y + self.roi[1], w, h]
         return self.slide.read_region(
-            self.crop_level, channel, region=roi
+            roi, self.crop_level, channel
         )
 
     def _process_channel_color(self, color):
@@ -235,7 +235,7 @@ class OMETiffGenerator:
                         h = size_y - y
                     
                     # get the pixel data out of the SlideImage
-                    chunk = self._get_slide_data(channel, x, y, w, h)
+                    chunk = self._get_pixels(channel, x, y, w, h)
                     print(chunk.shape)
                     if (w != chunk.shape[-1]) or (h != chunk.shape[-2]):
                         w = chunk.shape[-1]
@@ -264,7 +264,7 @@ class OMETiffGenerator:
         for c in range(size_c):
 
             channel = self.channels[c]
-            imarray = self._get_slide_data(channel, 0, 0, self.roi[-2], self.roi[-1])
+            imarray = self._get_pixels(channel, 0, 0, self.roi[-2], self.roi[-1])
             print('imarray shape: {}'.format(imarray.shape))
             
             print('Writing channel:  {}'.format(c + 1))
