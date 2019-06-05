@@ -4,11 +4,8 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from . import batch_ui as batch_UI
 from .progress import Progress
-from .threads import ThresholdWorker
-from .threads import SegmentationWorker
-from .threads import BatchSegmentationWorker
-from .threads import BatchSlideParseWorker
-from .threads import BatchCropWorker
+from . import threads
+from .threads import Worker
 from .roi import ROIItem
 
 
@@ -18,16 +15,11 @@ class BatchTable(QtWidgets.QWidget):
 
         super(BatchTable, self).__init__(table_widget)
         self.parent = parent
+        self.threadpool = parent.threadpool
         self.dialog = dialog
         self.table_widget = table_widget
         self.table_widget.setSelectionBehavior(QtWidgets.QTableView.SelectRows)
         self.table_widget.setSelectionMode(QtWidgets.QTableView.SingleSelection)
-
-        self.thresh_worker = ThresholdWorker()
-        self.thresh_worker.threshold_finished.connect(self.updateThresholdCell)
-
-        self.segmentation_worker = SegmentationWorker()
-        self.segmentation_worker.segmentation_finished.connect(self.updateSlideViewer)
 
     def update(self, folder, channels, thresholds):
         self.table_widget.clear()
@@ -118,8 +110,10 @@ class BatchTable(QtWidgets.QWidget):
 
         # lauch a threshold worker to recalculate the
         # channel thresholds
-        self.thresh_worker.initialise(slide_path, method=method)
-        self.thresh_worker.start()
+        thresh_worker = Worker(threads._threshold, slide_path, method)
+        thresh_worker.signals.result.connect(self.updateThresholdCell)
+
+        self.threadpool.start(thresh_worker)
 
     def updateThresholdCell(self, result):
         # get the row number
@@ -146,9 +140,8 @@ class BatchTable(QtWidgets.QWidget):
         # get the filename and create path to slide
         filename = self.table_widget.item(rid, 1).text()
         slide_path = os.path.join(self.dialog.folder, filename)
-
         self.parent.importImage(slide_path)
-        self._runSegmentation()
+        # self._runSegmentation()
 
     def updateSlideViewer(self, result):
         if result:
@@ -188,12 +181,12 @@ class BatchTable(QtWidgets.QWidget):
         # get the filename and create path to slide
         filename = self.table_widget.item(rid, 1).text()
         slide_path = os.path.join(self.dialog.folder, filename)
-        seg_channel = int(self.table_widget.item(rid, 3).text())        
+        seg_channel = int(self.table_widget.item(rid, 3).text())
         threshold = self._getThresholdCell(rid)[seg_channel]
 
-        self.segmentation_worker.initialise(slide_path, seg_channel, threshold)
-        self.segmentation_worker.start()
-
+        seg_worker = Worker(threads._segment, slide_path, seg_channel, threshold)
+        seg_worker.signals.result.connect(self.updateSlideViewer)
+        self.threadpool.start(seg_worker)
 
 class BatchDialog(QtWidgets.QDialog):
     def __init__(self, parent, folder=None):
@@ -223,14 +216,7 @@ class BatchDialog(QtWidgets.QDialog):
         # self.ui.stop_btn.clicked.connect(self.stopClicked)
         self.ui.stop_btn.hide()
 
-        self.import_worker = BatchSlideParseWorker()
-        self.import_worker.parse_done.connect(self.updateParameters)
-        self.import_worker.parse_done[str].connect(self.parseCancelled)
-
-        self.worker = BatchCropWorker()
-        self.worker.segmentation_finished.connect(self.setTableBarMax)
-        self.worker.batch_progress.connect(self.updateTableProgressBars)
-        self.worker.finished.connect(self.batchFinished)
+        self.threadpool = self.parent.threadpool
 
     def closeEvent(self, event):
         self.saveTable()
@@ -269,25 +255,25 @@ class BatchDialog(QtWidgets.QDialog):
         self.ui.run_btn.setEnabled(False)
         self.ui.stop_btn.setEnabled(True)
         rows = self.batch_table.getRows()
-        try:
-            input_paths = []
-            output_dirs = []
-            seg_channels = []            
-            thresholds = []
-            threshold_methods = []
-            for row in rows:
-                filename = row[0]
-                input_paths.append(os.path.join(self.folder, filename))
-                output_dirs.append(self.folder)
-                seg_channel = row[2]
-                seg_channels.append(seg_channel)
-                thresholds.append(row[3][seg_channel])
-            self._runBatch(
-                input_paths, output_dirs,
-                seg_channels, thresholds
-            )
-        except:
-            pass
+        # try:
+        input_paths = []
+        output_dirs = []
+        seg_channels = []            
+        thresholds = []
+        threshold_methods = []
+        for row in rows:
+            filename = row[0]
+            input_paths.append(os.path.join(self.folder, filename))
+            output_dirs.append(self.folder)
+            seg_channel = row[2]
+            seg_channels.append(seg_channel)
+            thresholds.append(row[3][seg_channel])
+        self._runBatch(
+            input_paths, output_dirs,
+            seg_channels, thresholds
+        )
+        # except:
+        #     pass
 
     def stopClicked(self):
         if self.ui.stop_btn.isEnabled():
@@ -303,13 +289,17 @@ class BatchDialog(QtWidgets.QDialog):
                 if filename.endswith('.ims'):
                     count += 1
             self.import_progress = Progress(self, count - 1, 'Slide import')
-            self.import_worker.initialise(folder, method)
-            self.import_worker.progress.connect(self.updateImportProgress)
-            self.import_worker.finished.connect(self.importFinished)
-            self.import_worker.start()
+
+            import_worker = Worker(threads._batch_import, folder, method)
+            import_worker.signals.progress.connect(self.updateImportProgress)
+            import_worker.signals.result.connect(self.updateParameters)
+            import_worker.signals.error.connect(self.parseCancelled)
+            import_worker.signals.finished.connect(self.importFinished)
 
             if not self.import_progress.isVisible():          
                 self.import_progress.show()
+
+            self.threadpool.start(import_worker)
 
     def parseCancelled(self):
         print("import didn't work")
@@ -367,5 +357,13 @@ class BatchDialog(QtWidgets.QDialog):
 
 
     def _runBatch(self, input_paths, output_dirs, seg_channels, thresholds):
-        self.worker.initialise(input_paths, output_dirs, seg_channels, thresholds)
-        self.worker.start()
+
+        batch_worker = Worker(
+            threads._batch_crop, input_paths,
+            output_dirs, seg_channels, thresholds
+        )
+        batch_worker.signals.custom_callback.connect(self.setTableBarMax)
+        batch_worker.signals.progress.connect(self.updateTableProgressBars)
+        batch_worker.signals.finished.connect(self.batchFinished)
+
+        self.threadpool.start(batch_worker)

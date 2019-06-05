@@ -106,13 +106,6 @@ class SlideImage:
         else:
             return None
 
-    # This is currently accessed in two places -
-    # 1. In OMETiffGenerator - array of pixels is required
-    #    for writing data to tiff
-    # 2. In DeepZoomGenerator which is used to generate tiles
-    #    for display in the UI. This actually requires either
-    #    the individual channel as RGB or an RGB representation
-    #    of all the channels - i.e. a merge
     def get_region_as_rgba(self, r, c, t=0, region=None):
         if r >= 0 and r <= self._size_r - 1:
             if region is None:

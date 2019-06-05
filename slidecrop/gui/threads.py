@@ -43,13 +43,17 @@ class WorkerSignals(QObject):
         `object` data returned from processing, anything
 
     progress
-        `int` indicating % progress
+        `object` indicating % progress (will be `int` or `tuple`)
+
+    custom_callback
+        `object` any other type of signal (e.g. partial results)
 
     '''
     finished = pyqtSignal()
     error = pyqtSignal(tuple)
     result = pyqtSignal(object)
-    progress = pyqtSignal(int)
+    progress = pyqtSignal(object)
+    custom_callback = pyqtSignal(object)
 
 
 class Worker(QRunnable):
@@ -77,6 +81,7 @@ class Worker(QRunnable):
 
         # Add the callback to our kwargs
         self.kwargs['progress_callback'] = self.signals.progress
+        self.kwargs['custom_callback'] = self.signals.custom_callback        
 
     @pyqtSlot()
     def run(self):
@@ -96,383 +101,45 @@ class Worker(QRunnable):
         finally:
             self.signals.finished.emit()  # Done
 
-
-
-class BaseWorker(QThread):
-    """
-    Base class for worker threads. Is itself a subclass
-    of Qt QThread class.
-    """
-    def __init__(self):
-        QThread.__init__(self)
-        self.stopped = False
-
-    def __del__(self):
-        self.wait()
-
-    def stop(self):
-        self.stopped = True
-
-    def is_stopped(self):
-        return self.stopped
-
-    def run(self):
-        """
-        Subclasses should reimplement this
-        """
-        pass
-
-
-class SlideImportWorker(BaseWorker):
-    """
-    Thread for importing (reading) a *.ims file
-    """
-    import_done = pyqtSignal([SlideImage], [str])
-
-    def __init__(self, slide_path=None):
-        """
-        Constructor
-
-        :param slide_path: path to slide image in *.ims format
-        :type slide_path: str
-        """
-        super().__init__()
-        self.slide_path = slide_path
-
-    def initialise(self, slide_path):
-        self.slide_path = slide_path
-
-    def run(self):
-        """
-        Called when the start() method is called on the instance
-
-        Emits the SlideImage instance
-        """
-        try:
-            slide = SlideImage(self.slide_path)
-            self.import_done.emit(slide)
-        except:
-            self.import_done[str].emit('')
-
-
-class BatchSlideParseWorker(BaseWorker):
-    """
-    Thread for batch parsing (reading) a *.ims file
-    to get thresholds and channels
-    """
-    progress = pyqtSignal(int)
-    parse_done = pyqtSignal([object], [str])
-
-    def __init__(self, folder=None, method='otsu'):
-        """
-        Constructor
-
-        :param slide_path: path to slide image in *.ims format
-        :type slide_path: str
-        """
-        super().__init__()
-        self.folder = folder
-        self.method = method
-
-    def initialise(self, folder, method):
-        self.folder = folder
-        self.method = method
-
-    def run(self):
-        """
-        Called when the start() method is called on the instance
-
-        Emits tuple of channels (int) and thresholds (list)
-        """
-        try:
-            channels = []
-            thresholds = []
-            count = 0
-            for filename in os.listdir(self.folder):
-                if filename.endswith('.ims'):
-                    slide_path = os.path.join(self.folder, filename)
-
-                    with SlideImage(slide_path) as slide:
-                        channels.append(slide.size_c)
-                        thresholds.append(_get_threshold(slide, self.method))
-
-                    self.progress.emit(count)
-                    time.sleep(0.2)
-                    count += 1
-            self.parse_done.emit((channels, thresholds))
-        except:
-            self.parse_done[str].emit("")
-
-
-class SegmentationWorker(BaseWorker):
-    """
-    Thread for segmenting a SlideImage
-    """
-    segmentation_finished = pyqtSignal(list)
-
-    def __init__(self, slide_path=None, channel=None, threshold=None):
-        """
-        Constructor
-
-        :param slide_path: path to slide image in *.ims format
-        :type slide_path: str
-        :param channel: channel to segment
-        :type channel: int
-        :param threshold: pixel intensity value to use as threshold
-        :type threshold: float
-        """
-        super().__init__()
-        self.slide_path = slide_path
-        self.channel = channel
-        self.threshold = threshold
-
-    def initialise(self, slide_path, channel, threshold):
-        self.slide_path = slide_path
-        self.channel = channel
-        self.threshold = threshold
-
-    def run(self):
-        """
-        Called when the start() method is called on the instance
-
-        Emits the regions segmented
-        """
-        try:
-            with SlideImage(self.slide_path) as slide:
-                regions = _segment(slide, self.channel, self.threshold)
-
-            self.segmentation_finished.emit(regions)
-        except:
-            pass
-
-
-class ThresholdWorker(BaseWorker):
-    """
-    Thread for finding auto threshold for each channel
-    in a SlideImage
-    """
-    threshold_finished = pyqtSignal(list)
-
-    def __init__(self, slide_path=None, method='otsu'):
-        """
-        Constructor
-
-        :param slide_path: path to slide image in *.ims format
-        :type slide_path: str        
-        """
-        super().__init__()
-        self.slide_path = slide_path
-        self.method = method
-
-    def initialise(self, slide_path, method='otsu'):
-        self.slide_path = slide_path
-        self.method = method
-
-    def run(self):
-        """
-        Called when the start() method is called on the instance
-
-        Emits a list of Otsu determined threshold levels
-        """
-        try:
-            with SlideImage(self.slide_path) as slide:
-                thresh = _get_threshold(slide, self.method)
-
-            self.threshold_finished.emit(thresh)
-        except:
-            pass
-
-
-class HistogramWorker(BaseWorker):
-    """
-    Thread for getting image histograms from *.ims image
-    metadata
-    """
-    histogram_finished = pyqtSignal(list)
-
-    def __init__(self, slide_path=None):
-        """
-        Constructor
-
-        :param slide_path: path to slide image in *.ims format
-        :type slide_path: str    
-        """        
-        super().__init__()
-        self.slide_path = slide_path
-
-    def initialise(self, slide_path):
-        self.slide_path = slide_path
-
-    def run(self):
-        """
-        Called when the start() method is called on the instance
-
-        Emits list of image histograms as numpy arrays
-        """
-        try:
-            with SlideImage(self.slide_path) as slide:
-                data = _get_histogram(slide)
-
-            self.histogram_finished.emit(data)
-        except:
-            pass
-
-
-class OMEWorker(BaseWorker):
-    """
-    Thread for creating *.ome.tif images from pixel regions
-    extracted from *.ims images
-    """
-    progress = pyqtSignal(int)
-
-    def __init__(self, slide_path, outputdir, channels, regions):
-        """
-        Constructor
-
-        :param slide_path: path to slide image in *.ims format
-        :type slide_path: str
-        :param outputdir: directory where *.ome.tiff will be saved
-        :type outputdir: str
-        :param channels: the channels to be written
-        :type channels: list or int
-        :param regions: x, y, w, h of regions to be written
-        :type regions: list
-        """
-        super().__init__()
-        self.slide_path = slide_path
-        self.outputdir = outputdir
-        self.channels = channels
-        self.regions = regions
-
-    def run(self):
-        """
-        Called when the start() method is called on the instance
-
-        Emits a int indicating which region is being written
-        to *.ome.tiff
-        """
-        if self.regions:
-            try:
-                with SlideImage(self.slide_path) as slide:
-                    for rid, region in enumerate(self.regions):
-
-                        filename = slide.basename + '_section_{}.ome.tif'.format(rid)
-                        _crop_region(slide, filename, self.outputdir, region)
-
-                        self.progress.emit(rid)
-            except:
-                pass
-
-
-class BatchSegmentationWorker(BaseWorker):
-    """
-    Thread for segmenting a SlideImage
-    """
-    segmentation_finished = pyqtSignal(list)
-
-    def __init__(self, input_paths=None, channels=None, thresholds=None):
-        """
-        Constructor
-
-        :param input_paths: paths to slide images in *.ims format
-        :type slide_path: str
-        :param channels: channel to segment
-        :type channels: list of int
-        :param threshold: pixel intensity value to use as threshold
-        :type threshold: float
-        """
-        super().__init__()
-        self.input_paths = input_paths
-        self.channels = channels
-        self.thresholds = thresholds
-
-    def run(self):
-        """
-        Called when the start() method is called on the instance
-
-        Emits the regions segmented
-        """
-        try:
-            batch_regions = []
-            for sid, slide_path in enumerate(self.input_paths):
-                seg_channel = self.channels[sid]
-                threshold = self.thresholds[sid]
-                with SlideImage(slide_path) as slide:
-                    batch_regions.append(_segment(slide, seg_channel, threshold))
-
-            self.segmentation_finished.emit(batch_regions)
-        except:
-            pass
-
-
-class BatchCropWorker(BaseWorker):
-    """
-    Thread for creating *.ome.tif images from pixel regions
-    extracted from *.ims images
-    """
-    segmentation_finished = pyqtSignal(object)
-    batch_progress = pyqtSignal(object)
-
-    def __init__(self, input_paths=None, output_dirs=None, seg_channels=None, thresholds=None):
-        """
-        Constructor
-
-        :param input_paths: folder containing *.ims images
-        :type input_paths: str
-        :param output_dirs: directory where *.ome.tiff will be saved
-        :type output_dirs: str
-        :param regions: pixel regions to be cropped
-        :param regions: list
-        """
-        super().__init__()
-        self.input_paths = input_paths
-        self.output_dirs = output_dirs
-        self.channels = seg_channels
-        self.thresholds = thresholds
-
-    def initialise(self, input_paths, output_dirs, seg_channels, thresholds):
-        self.stopped = False
-        self.input_paths = input_paths
-        self.output_dirs = output_dirs
-        self.channels = seg_channels
-        self.thresholds = thresholds
-
-    def run(self):
-        """
-        Called when the start() method is called on the instance
-
-        Emits a int indicating which region is being written
-        to *.ome.tiff
-        """
-        tic = time.time()
-        count = 0
-        print(self.is_stopped())
-        while not self.is_stopped():
-            for sid, slide_path in enumerate(self.input_paths):
-                seg_channel = self.channels[sid]
-                threshold = self.thresholds[sid]
-
-                with SlideImage(slide_path) as slide:
-                    # segment
-                    regions = _segment(slide, seg_channel, threshold)
-                    self.segmentation_finished.emit((sid, len(regions)))
-
-                    for rid, region in enumerate(regions):
-                        filename = slide.basename + '_section_{}.ome.tif'.format(rid)
-                        print('writing filename {}'.format(filename))
-
-                        # crop and make ome-tiff
-                        _crop_region(slide, filename, self.output_dirs[sid], region)
-                        self.batch_progress.emit((sid, rid))
-                        count += 1
-            self.stopped = True
-        toc = time.time()
-        print(toc - tic)
-
-
 #####
-# helpers
-def _get_histogram(slide):
+# functions to run in threads
+def _import(slide_path,
+            progress_callback=None,
+            custom_callback=None):
+
+    slide = SlideImage(slide_path)
+    threshold = _get_threshold(slide, 'otsu')
+    hist = []
+    for c in range(slide.size_c):
+        hist.append(slide.get_histogram(c=c))
+    return (slide, threshold, hist)
+
+
+def _batch_import(folder, thresh_method,
+                  progress_callback=None,
+                  custom_callback=None):
+
+    channels = []
+    thresholds = []
+    count = 0
+    for filename in os.listdir(folder):
+        if filename.endswith('.ims'):
+            slide_path = os.path.join(folder, filename)
+
+            with SlideImage(slide_path) as slide:
+                channels.append(slide.size_c)
+                thresholds.append(_get_threshold(slide, thresh_method))
+
+            progress_callback.emit(count)
+            time.sleep(0.2)
+            count += 1    
+
+    return (channels, thresholds)
+
+def _get_histogram(slide,
+                   progress_callback=None,
+                   custom_callback=None):
+
     y = []
     for c in range(slide.size_c):
         y.append(slide.get_histogram(c=c))
@@ -495,7 +162,10 @@ def _auto_threshold(plane, method):
     return thresh       
 
 
-def _get_threshold(slide, method):
+def _get_threshold(slide, method,
+                   progress_callback=None,
+                   custom_callback=None):
+
     low = slide.low_resolution_image()
     size_c = slide.size_c
     thresh = []
@@ -506,21 +176,37 @@ def _get_threshold(slide, method):
     return thresh
 
 
-def _segment(slide, channel, threshold):
-    mode = slide.microscope_mode
-    lo = slide.low_resolution_image()
-    factor = slide.scale_factor
+def _threshold(slide_path, method,
+               progress_callback=None,
+               custom_callback=None):
 
-    segmenter = Segment(
-        mode, factor, channel=channel,
-        thresh_method='manual', threshold=threshold
-    )
-    regions = segmenter.run(lo)
+    with SlideImage(slide_path) as slide:
+        threshold = _get_threshold(slide, method)
+
+    return threshold
+
+
+def _segment(slide_path,
+             channel, threshold,
+             progress_callback=None,
+             custom_callback=None):
+
+    with SlideImage(slide_path) as slide:
+        mode = slide.microscope_mode
+        lo = slide.low_resolution_image()
+        factor = slide.scale_factor
+
+        segmenter = Segment(
+            mode, factor, channel=channel,
+            thresh_method='manual', threshold=threshold
+        )
+        regions = segmenter.run(lo)
     return regions
 
 
-def _crop_region(slide, filename, outputdir, region):
-    channels = [c for c in range(slide.size_c)]
+def _make_ome(slide, outputdir, region, rid):
+    filename = slide.basename + '_section_{}.ome.tif'.format(rid)    
+    channels = [c for c in range(slide.size_c)]    
     ometiff = OMETiffGenerator(
         slide,
         filename,
@@ -528,3 +214,37 @@ def _crop_region(slide, filename, outputdir, region):
         channels, 0, 0
     )
     ometiff.run(region)
+
+
+def _crop_regions(slide_path,
+                  outputdir, regions,
+                  progress_callback=None,
+                  custom_callback=None):
+
+    with SlideImage(slide_path) as slide:
+        for rid, region in enumerate(regions):
+            _make_ome(slide, outputdir, region, rid)
+            time.sleep(0.1)
+            progress_callback.emit(rid)
+
+
+def _batch_crop(input_paths, output_dirs, channels,
+                thresholds, progress_callback=None,
+                custom_callback=None):
+
+    count = 0
+    for sid, slide_path in enumerate(input_paths):
+        seg_channel = channels[sid]
+        threshold = thresholds[sid]
+
+        # segment
+        regions = _segment(slide_path, seg_channel, threshold)
+        custom_callback.emit((sid, len(regions)))
+
+        # crop
+        with SlideImage(slide_path) as slide:
+            for rid, region in enumerate(regions):
+
+                _make_ome(slide, output_dirs[sid], region, rid)
+                progress_callback.emit((sid, rid))
+                count += 1

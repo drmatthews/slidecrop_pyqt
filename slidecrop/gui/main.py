@@ -7,14 +7,8 @@ from . import main_ui as UI
 from .threshold import ThresholdDialog
 from .batch import BatchDialog
 from .progress import Progress
-from .threads import (
-    SlideImportWorker,
-    SegmentationWorker,
-    HistogramWorker,
-    ThresholdWorker,
-    OMEWorker,
-    BatchCropWorker
-)
+from . import threads
+from .threads import Worker
 from .roi import ROITable
 from .roi import ROIItem
 from ..ims.slide import SlideImage
@@ -269,20 +263,13 @@ class Window(QtWidgets.QMainWindow):
         # signals
         self.ui.actionOpen.triggered.connect(self.openClicked)
         self.ui.actionExit.triggered.connect(self.closeEvent)
-        self.ui.actionSegment.triggered.connect(self.segmentClicked)
         self.ui.actionCrop.triggered.connect(self.cropClicked)
         self.ui.actionThreshold.triggered.connect(self.thresholdClicked)
         self.ui.actionBatch.triggered.connect(self.batchClicked)        
         self.ui.slide_tabWidget.currentChanged.connect(self.onChannelChange)
         
-        # threads
-        self.import_worker = SlideImportWorker()
-        self.import_worker.import_done.connect(self.onImportFinished)
-        self.import_worker.import_done[str].connect(self.onImportCancelled)        
-        self.histogram_worker = HistogramWorker()
-        self.histogram_worker.histogram_finished.connect(self.onHistogramFinished)
-        self.thresh_worker = ThresholdWorker()
-        self.thresh_worker.threshold_finished.connect(self.onThresholdFinished)
+        # thread pool
+        self.threadpool = QtCore.QThreadPool()
 
     # events
     def dragEnterEvent(self, event):
@@ -345,8 +332,11 @@ class Window(QtWidgets.QMainWindow):
     def importImage(self, filepath):
         if filepath:
             self.viewer.clearScene()
-            self.import_worker.slide_path = filepath
-            self.import_worker.start()
+            import_worker = Worker(threads._import, filepath)
+            import_worker.signals.result.connect(self.onImportFinished)
+            import_worker.signals.error.connect(self.onImportCancelled)
+
+            self.threadpool.start(import_worker)
 
     def thresholdClicked(self):
         """
@@ -388,41 +378,11 @@ class Window(QtWidgets.QMainWindow):
 
             self._updateDisplayImage(self.curr_channel)
 
-            # start the segmentation thread
-            self.segmentation_worker = SegmentationWorker(
-                self.slide_path, channel, threshold
+            seg_worker = Worker(
+                threads._segment, self.slide_path, channel, threshold
             )
-
-            # respond to the segmentation thread finishing
-            self.segmentation_worker.segmentation_finished.connect(self.onSegmentationFinished)     
-            self.segmentation_worker.start()            
-
-    def segmentClicked(self):
-        """
-        segmentAction clicked. Activates the 
-        segmentation_worker thread.
-        """
-        if self.curr_img is not None:
-
-            self.viewer.clearScene()
-
-            # determine the channel to segment
-            segment_channel = self.curr_channel
-            if isinstance(segment_channel, str):
-                segment_channel = 0
-
-            # get the current threshold for that channel
-            threshold = self.threshold[segment_channel]
-
-            # start the segmentation thread
-            self.segmentation_worker = SegmentationWorker(
-                self.slide_path, segment_channel, threshold
-            )
-
-            # respond to the segmentation thread finishing
-            self.segmentation_worker.segmentation_finished.connect(self.onSegmentationFinished)     
-            self.segmentation_worker.start()
-
+            seg_worker.signals.result.connect(self.onSegmentationFinished)
+            self.threadpool.start(seg_worker)
 
     def cropClicked(self):
         """
@@ -446,19 +406,20 @@ class Window(QtWidgets.QMainWindow):
                 self.progress_dialog = Progress(self, num_regions - 1, 'Crop')
                 # explitily set outputdir and channels while testing
                 outputdir = os.path.dirname(self.slide_path)
-                channels = [c for c in range(self.channels)]
 
-                # start the OMEWorker thread
-                self.ome_worker = OMEWorker(self.slide_path, outputdir, channels, regions)
-                self.ome_worker.start()
+            ome_worker = Worker(
+                threads._crop_regions,
+                self.slide_path,
+                outputdir,
+                regions
+            )
+            ome_worker.signals.progress.connect(self.updateProgress)
+            ome_worker.signals.finished.connect(self.onCropFinished)
 
-                # respond to the progress signal
-                self.ome_worker.progress.connect(self.updateProgress)
-
-                # respond to the finished signal
-                self.ome_worker.finished.connect(self.onCropFinished)
-                if not self.progress_dialog.isVisible():          
-                    self.progress_dialog.show()
+            if not self.progress_dialog.isVisible():          
+                self.progress_dialog.show()
+            
+            self.threadpool.start(ome_worker)
 
 
     def batchClicked(self):
@@ -469,10 +430,12 @@ class Window(QtWidgets.QMainWindow):
 
 
     # slots
-    def onImportFinished(self, slide):
+    def onImportFinished(self, result):
         """
         Responds to the importWorker thread.
         """
+        slide, self.threshold, self.slide_histogram = result
+
         self.slide_path = slide.filepath
         self.basepath = os.path.dirname(self.slide_path)
         self.basename = os.path.splitext(self.slide_path)[0]
@@ -483,14 +446,6 @@ class Window(QtWidgets.QMainWindow):
 
         # get the channels in the slide
         self.channels = self.slide.size_c
-
-        # determine otsu threshold
-        self.thresh_worker.initialise(self.slide_path)
-        self.thresh_worker.start()
-
-        # get the histogram for each channel from the slide
-        self.histogram_worker.initialise(self.slide_path)
-        self.histogram_worker.start()
 
         # get channel names and colors
         self.channel_names = slide.channel_names
@@ -644,14 +599,11 @@ class Window(QtWidgets.QMainWindow):
 
         self._updateDisplayImage(self.curr_channel)
 
-        # start the segmentation thread
-        self.segmentation_worker = SegmentationWorker(
-            self.slide_path, channel, line.value()
+        seg_worker = Worker(
+            threads._segment, self.slide_path, channel, line.value()
         )
-
-        # respond to the segmentation thread finishing
-        self.segmentation_worker.segmentation_finished.connect(self.onSegmentationFinished)     
-        self.segmentation_worker.start()
+        seg_worker.signals.result.connect(self.onSegmentationFinished)
+        self.threadpool.start(seg_worker)
         
 
 if __name__ == '__main__':

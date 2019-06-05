@@ -6,7 +6,8 @@ import pyqtgraph as pg
 from numpy import arange, max, nonzero
 
 from . import threshold_ui as thresh_UI
-from .threads import ThresholdWorker
+from . import threads
+from .threads import Worker
 
 
 pg.setConfigOptions(antialias=True)
@@ -38,6 +39,7 @@ class ThresholdDialog(QtWidgets.QDialog):
     def __init__(self, parent=None, data=None, threshold=None, **kargs):
         super(ThresholdDialog, self).__init__(parent=parent)
         self.parent = parent
+        self.threadpool = parent.threadpool
         self.data = data
         self.threshold = threshold
         self.thresh_line = None
@@ -46,10 +48,7 @@ class ThresholdDialog(QtWidgets.QDialog):
 
         # set the combo box to 'otsu'
         self.ui.method_combo.setCurrentIndex(2)
-        self.ui.method_combo.currentIndexChanged.connect(self.onMethodChange) 
-
-        self.thresh_worker = ThresholdWorker()
-        self.thresh_worker.threshold_finished.connect(self.updateLineAndDisplay)               
+        self.ui.method_combo.currentIndexChanged.connect(self.onMethodChange)              
 
         grad = QtGui.QLinearGradient(0, 0, 0, 3)
         grad.setColorAt(0.1, pg.mkColor('#000000'))
@@ -107,11 +106,13 @@ class ThresholdDialog(QtWidgets.QDialog):
         bd = self.parent.batch_dialog
         if bd is not None and bd.isVisible():
             self.parent.batch_dialog.batch_table.updateThreshMethodCell(val)
-        
-        self.thresh_worker.initialise(self.parent.slide_path, method)
-        # lauch a threshold worker to recalculate the
-        # channel thresholds
-        self.thresh_worker.start()
+
+        thresh_worker = Worker(
+            threads._threshold, self.parent.slide_path, method
+        )
+        thresh_worker.signals.result.connect(self.updateLineAndDisplay)
+
+        self.threadpool.start(thresh_worker)
 
     def updateLineAndDisplay(self, result):
         print("result")
